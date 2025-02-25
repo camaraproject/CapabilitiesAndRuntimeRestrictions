@@ -31,10 +31,11 @@ The repository has no (pre)releases yet, work in progress is within the main bra
 
 ## Contributing
 * Meetings are held virtually <!-- for Sandbox Repository independent of an existing Sub Project request a meeting link from the LF admin team or replace the information with the existing meeting information (of the API family) -->
-    * Schedule: !! tbd
-    * [Registration / Join](https://wiki.camaraproject.org/x/TQAG) !! Update this link with your meeting registration/join link
-    * Minutes: Access [meeting minutes] !! update this link to your wiki page using the "Share" link
+    * Schedule: Tuesdays 1400-1500 UTC, every two weeks.
+    * [Registration / Join](https://zoom-lfx.platform.linuxfoundation.org/meeting/96678356438?password=706020d3-07bc-4d90-a0d5-1d6b94452a53)
+    * Minutes: Access [meeting minutes](https://lf-camaraproject.atlassian.net/wiki/x/6YAjAw)
 * Mailing List
     <!-- Note: the $$ is either already existing or will be created by the CAMARA Admin Team  -->
     * Subscribe / Unsubscribe to the mailing list of this Sub Project <https://lists.camaraproject.org/g/sp-crr>.
     * A message to the community of this Sub Project can be sent using <sp-crr@lists.camaraproject.org>.
+

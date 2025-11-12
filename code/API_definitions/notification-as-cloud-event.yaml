@@ -48,7 +48,7 @@ externalDocs:
   description: Product documentation at CAMARA
   url: https://github.com/camaraproject/Commonalities
 security:
-    - notificationsBearerAuth: []
+  - notificationsBearerAuth: []
 servers:
   - url: '{apiRoot}'
     variables:
@@ -84,20 +84,20 @@ paths:
                 $ref: "#/components/schemas/CloudEvent"
 
       responses:
-        204:
+        "204":
           description: No Content
           headers:
             x-correlator:
               $ref: "#/components/headers/x-correlator"
-        400:
+        "400":
           $ref: "#/components/responses/Generic400"
-        401:
+        "401":
           $ref: "#/components/responses/Generic401"
-        403:
+        "403":
           $ref: "#/components/responses/Generic403"
-        410:
+        "410":
           $ref: "#/components/responses/Generic410"
-        429:
+        "429":
           $ref: "#/components/responses/Generic429"
 components:
   securitySchemes:

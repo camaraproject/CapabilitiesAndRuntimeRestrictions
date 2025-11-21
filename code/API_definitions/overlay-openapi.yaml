@@ -20,10 +20,10 @@ components:
     Overlay:
       description: |
         Common attributes of openAPI overlay [specification]("https://spec.openapis.org/overlay/latest.html").
-        The list of actions MUST be applied in sequential order to ensure a consistent outcome. Actions are applied to 
-        the result of the previous action. This enables objects to be deleted in one action and then re-created in a 
-        subsequent action, for example. 
-        The extends property can be used to indicate that the Overlay was designed to update a specific document. Where no extends 
+        The list of actions MUST be applied in sequential order to ensure a consistent outcome. Actions are applied to
+        the result of the previous action. This enables objects to be deleted in one action and then re-created in a
+        subsequent action, for example.
+        The extends property can be used to indicate that the Overlay was designed to update a specific document. Where no extends
         is provided this implementation assumes an instance of the Components object '#/components/schemas/Components' is the 'document' root.
       type: object
       properties:
@@ -33,7 +33,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/Extends'
           description: |
-            URI of the document to overlay.  
+            URI of the document to overlay.
             Defaults to the root Components object if omitted.
         actions:
           $ref: '#/components/schemas/Actions'
@@ -73,10 +73,10 @@ components:
           type: string
           pattern: ^\$
           description: |
-            **JSONPath** (RFC 9535 §4) selector that yields zero or more **non-null** 
+            **JSONPath** (RFC 9535 §4) selector that yields zero or more **non-null**
             nodes or "results". The results MAY resolve to an object or array.
-            **JSONPath** (RFC 9535 §4) examples:  
-              `$.paths['/foo'].get` &nbsp;&nbsp;`$..security[*]` 
+            **JSONPath** (RFC 9535 §4) examples:
+              `$.paths['/foo'].get` &nbsp;&nbsp;`$..security[*]`
         update:
           type: object
           description: |

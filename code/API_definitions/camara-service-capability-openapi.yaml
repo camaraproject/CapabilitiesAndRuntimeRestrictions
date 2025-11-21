@@ -3,46 +3,46 @@ openapi: 3.0.3
 info:
   title: CAMARA Service Capability API
   description: |
-    The CAMARA Service Capability API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified 
-    about active/inactive capabilities (functions) for APIs. 
-    
+    The CAMARA Service Capability API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified
+    about active/inactive capabilities (functions) for APIs.
+
     It delivers a tailored service capability based on consumer context, supporting complex request bodies, endpoint removal, and dynamic restrictions.
 
     # Introduction
     This API enables feature discovery and near-real-time feature status notifications for APIs provided by the gateway / provider.
 
-    Overlay-based restrictions use JSON Schema Validation (draft-bhutton-json-schema-validation-01) keywords and ensure restriction-only constraints. 
-    The specification supports dynamic tailoring via `POST /camara/service/capability/v0`, which returns a restriction mapping with bit positions, capability identifiers, 
-    and a mapping version. Initial restriction states are included in the successful response. Restriction state changes are notified via CloudEvents using bitmap-only 
+    Overlay-based restrictions use JSON Schema Validation (draft-bhutton-json-schema-validation-01) keywords and ensure restriction-only constraints.
+    The specification supports dynamic tailoring via `POST /camara/service/capability/v0`, which returns a restriction mapping with bit positions, capability identifiers,
+    and a mapping version. Initial restriction states are included in the successful response. Restriction state changes are notified via CloudEvents using bitmap-only
     payloads for restrictions and leveraging the restriction mapping for synchronization. Versioning ensures consumers adapt to mapping changes.
 
     Overlays conform to the OpenAPI Overlay specification (https://spec.openapis.org/overlay/latest.html) and are evaluated at run-time rather than build-time on API consumer side using
-    context-aware logic. Only schema-restrictive updates are allowed (e.g., narrowing enums, removing operations).  These extensions enable fine-grained control over API capabilities 
-    by applying restriction-only constraints to schemas, body fields, and headers/parameters, respectively. 
+    context-aware logic. Only schema-restrictive updates are allowed (e.g., narrowing enums, removing operations).  These extensions enable fine-grained control over API capabilities
+    by applying restriction-only constraints to schemas, body fields, and headers/parameters, respectively.
 
-    An **API** (Application Programming Interface) often includes **features** that can be *active* or *inactive* during 
-    interactions with API consumers. For example, feature negotiation during session establishment or events such as high congestion that 
-    change a feature's status. 
-    
+    An **API** (Application Programming Interface) often includes **features** that can be *active* or *inactive* during
+    interactions with API consumers. For example, feature negotiation during session establishment or events such as high congestion that
+    change a feature's status.
+
     **Capabilities** represent a collection of features and their **status** (*active* or *inactive*) at runtime.
     These capabilities provide a way to describe what an API can do.
 
-    **Footprints** define the coverage area where specific capabilities are available. A device must be located within the footprint to access 
-    these capabilities. If no footprint is specified, the capabilities *may* be available to *any* device connected to the network. Footprints 
-    have a *usage type* that determines their visibility and use. For example, some footprints may only be visible to Access Networks where 
-    devices are attached, while others may be visible to Internet servers or services in a Non-Access network. Some footprints 
-    may even be used in both types of networks. 
-    
-    The API provider MAY have full knowledge of whereabout of the device, thus directly notifying the capabilities consumers 
+    **Footprints** define the coverage area where specific capabilities are available. A device must be located within the footprint to access
+    these capabilities. If no footprint is specified, the capabilities *may* be available to *any* device connected to the network. Footprints
+    have a *usage type* that determines their visibility and use. For example, some footprints may only be visible to Access Networks where
+    devices are attached, while others may be visible to Internet servers or services in a Non-Access network. Some footprints
+    may even be used in both types of networks.
+
+    The API provider MAY have full knowledge of whereabout of the device, thus directly notifying the capabilities consumers
     with near-real-time capability changes resulting of device location change without using footprints. This would reduce the additional footprint processing requirement at the consumer side
     when the device receives the capability notification and capability info.
 
-    When footprints are used, they are presented as part of a collection. A device is considered to be covered by a footprint collection if it 
+    When footprints are used, they are presented as part of a collection. A device is considered to be covered by a footprint collection if it
     falls within at least one footprint in the collection. Footprint *precedence* specifies the search execution order of footprints in the
-    collection. The lower the numerical value of precedence, the higher the footprint precedence. Footprints with equal precedence MAY be 
+    collection. The lower the numerical value of precedence, the higher the footprint precedence. Footprints with equal precedence MAY be
     executed in parallel if supported by the system. (see *Usage* for more detail).
 
-    To convey the impact of capability status to API consumers in a meaningful way, capabilities are directly tied to a set of **Runtime Restrictions**. 
+    To convey the impact of capability status to API consumers in a meaningful way, capabilities are directly tied to a set of **Runtime Restrictions**.
     These restrictions affect optional or alternative structures, parameters, and other aspects of API usage.
 
     # Usage
@@ -69,28 +69,28 @@ info:
               |                     |                  204                       |
               |                     |                   |                        |
         The Capability API responds with the supported capabilities and then internally
-        registers for capability change events if 'subscriptionRequest' is provided in the request. 
-        As capabilities change event notifications are forwarded through a CloudEvents Broker to 
+        registers for capability change events if 'subscriptionRequest' is provided in the request.
+        As capabilities change event notifications are forwarded through a CloudEvents Broker to
         the client-provided Webhook (Sink).
     ```
-    **How it works**  
-    1. **Query capabilities**  
-       Client sends one or more `CamaraCapabilityQuery` objects to `/camara/service/capability/v0`.  
-    2. **Inspect response**  
-       API returns a `CapabilityInfo` object with per-capability details, overlays, and restriction sets.  
-    3. **Receive updates automatically**  
-       Whenever capability bitmaps or info change, the API emits a CloudEvent (via implicit subscription)  
+    **How it works**
+    1. **Query capabilities**
+       Client sends one or more `CamaraCapabilityQuery` objects to `/camara/service/capability/v0`.
+    2. **Inspect response**
+       API returns a `CapabilityInfo` object with per-capability details, overlays, and restriction sets.
+    3. **Receive updates automatically**
+       Whenever capability bitmaps or info change, the API emits a CloudEvent (via implicit subscription)
        to your configured webhook sink endpoint.
-    **Supported CloudEvent types:**  
-    - `org.camaraproject.capability.v0.capability-bitmap-changed`  
-    - `org.camaraproject.capability.v0.capability-info-changed`  
+    **Supported CloudEvent types:**
+    - `org.camaraproject.capability.v0.capability-bitmap-changed`
+    - `org.camaraproject.capability.v0.capability-info-changed`
     For full schema definitions and examples, see the components section below.
 
     ### Summary:
     1. `POST /camara/service/capability/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
     2. CloudEvents Notifications: Signals restriction state changes (active/inactive) via bitmap change event and new restrictions via info change event, ensuring efficient synchronization.
     3. Versioning: Uses mappingVersion to handle changes in the restriction mapping, preventing synchronization errors.
-         
+
     # Relevant terms and definitions
     * **Authentication**:
     Security access keys such as OAuth 2.0 client credentials used by client applications to invoke the Capability API.
@@ -104,10 +104,10 @@ info:
     Define the coverage area where specific capabilities are available.
     * **Runtime Restrictions**:
     Restrictions that affect optional or alternative structures, parameters, and other aspects of API usage using a collection of overlays.
-    There are two kinds of overlays. The openAPI Overlays specification is at https://spec.openapis.org/overlay/latest.html. 
+    There are two kinds of overlays. The openAPI Overlays specification is at https://spec.openapis.org/overlay/latest.html.
     One kind is the static version of overlays which can be applied to the API spec at the build time of the
     Client. The actions of the overlays are known to the Client before any runtime. Second kind is the one we're specifying in this CAMARA
-    Service Capability API specification where the overlays take effect at the runtime of the Client if the Client supports this specification. 
+    Service Capability API specification where the overlays take effect at the runtime of the Client if the Client supports this specification.
     The actions of any overlays are not known to the Client until they're communicated from the API provider at the runtime of the Client.
 
     # API functionality
@@ -116,31 +116,31 @@ info:
     # Further info and support
 
     ## Frequently Asked Questions (FAQs)
-    1. What is the purpose of the API described in the text? 
-    The API enables feature discovery and near-real-time feature status notifications 
+    1. What is the purpose of the API described in the text?
+    The API enables feature discovery and near-real-time feature status notifications
     for APIs provided by the gateway.
-    2. What are capabilities and how do they relate to API features? 
-    Capabilities represent a collection of features and their 
+    2. What are capabilities and how do they relate to API features?
+    Capabilities represent a collection of features and their
     status (*active* or *inactive*) at a specific point in time. These capabilities provide a way to describe what an API can do.
-    3. What are footprints and how do they affect the availability of capabilities? 
-    Footprints define the coverage area where specific 
-    capabilities are available. A device must be located within the footprint to access these capabilities. If no footprint is specified, 
+    3. What are footprints and how do they affect the availability of capabilities?
+    Footprints define the coverage area where specific
+    capabilities are available. A device must be located within the footprint to access these capabilities. If no footprint is specified,
     the capabilities may be available to any device connected to the network.
-    4. What is the role of footprint precedence in the search execution order? 
-    Footprint precedence specifies the search execution order of 
-    Footprints in the collection. The lower the numerical value of precedence, the higher the Footprint precedence. Footprints with equal 
+    4. What is the role of footprint precedence in the search execution order?
+    Footprint precedence specifies the search execution order of
+    Footprints in the collection. The lower the numerical value of precedence, the higher the Footprint precedence. Footprints with equal
     precedence may be executed in parallel if supported by the system.
-    5. How do runtime restrictions affect API usage? 
-    To convey the impact of capability status to API consumers in a meaningful way, 
-    capabilities are directly tied to a set of runtime restrictions. These restrictions affect optional or alternative structures, 
+    5. How do runtime restrictions affect API usage?
+    To convey the impact of capability status to API consumers in a meaningful way,
+    capabilities are directly tied to a set of runtime restrictions. These restrictions affect optional or alternative structures,
     parameters, and other aspects of API usage using a collection of overlays.
-    6. What if a Client does not support this API? 
+    6. What if a Client does not support this API?
     They can send requests without using this API. The downside
-    is that they may send requests that are invalid and could have been avoided with information from this API. They 
+    is that they may send requests that are invalid and could have been avoided with information from this API. They
     could be more proactive by disabling / hiding options that are not enabled in the Client which improves user
     experience.
-    7. What if a Client does not support Footprints or a specific Footprint type? 
-    They should ignore enforcing the 
+    7. What if a Client does not support Footprints or a specific Footprint type?
+    They should ignore enforcing the
     state of the specific capability. This may result in sending invalid requests.
   license:
     name: Apache 2.0
@@ -169,7 +169,7 @@ paths:
       summary: Retrieve tailored service capabilities based on consumer context
       description: |
         Returns service capability information tailored to the consumer's context, including active/inactive restrictions and mapping metadata.
-        Successful response is with sets of restrictions based on consumer context, along with a restriction mapping assigning bit positions, 
+        Successful response is with sets of restrictions based on consumer context, along with a restriction mapping assigning bit positions,
         capability identifiers, and a mapping version. It includes response with initial bitmaps which should be enforced on the API consumer side.
       operationId: postServiceCapability
       parameters:
@@ -310,9 +310,9 @@ components:
           type: object
           # Valid header *names* (field-name = token)
           description: |
-            A map of HTTP header fields.  
+            A map of HTTP header fields.
             **Header names (object keys)** SHOULD conform to the RFC-7230 `token` syntax:
-            `^[!#$%&'*+\-\.^_`|~0-9A-Za-z]+$`  
+            `^[!#$%&'*+\-\.^_`|~0-9A-Za-z]+$`
             Note: OpenAPI 3.0.3 cannot enforce key-name patterns natively.
           additionalProperties:
             type: string
@@ -360,9 +360,9 @@ components:
       required: [name, version]
     Footprint:
       description: |
-        The coverage area to which capabilities apply. They help define the context in which the features are relevant.    
-        There are many ways to describe a footprint -- for example, by address range (e.g., IPv4 CIDR or IPv6 CIDR (Classless Inter-Domain Routing), 
-        network ID (e.g., Autonomous System Number (ASN)), nation boundaries (e.g., country code) or GPS coordinates. 
+        The coverage area to which capabilities apply. They help define the context in which the features are relevant.
+        There are many ways to describe a footprint -- for example, by address range (e.g., IPv4 CIDR or IPv6 CIDR (Classless Inter-Domain Routing),
+        network ID (e.g., Autonomous System Number (ASN)), nation boundaries (e.g., country code) or GPS coordinates.
         When a **Footprint** value is not present, the capabilities apply to *any* connected device.
       allOf:
         - $ref: '#/components/schemas/VersionedName'
@@ -415,7 +415,7 @@ components:
               enum: [access, non_access, both]
             precedence:
               description: |
-                Specifies the search execution order of Footprints when they are part of a collection. The lower the numerical value of precedence, 
+                Specifies the search execution order of Footprints when they are part of a collection. The lower the numerical value of precedence,
                 the higher the rule precedence. Rules with equal precedence MAY be executed in parallel if supported.
               type: integer
               minimum: 0
@@ -428,7 +428,7 @@ components:
         - precedence
     Metadata:
       description: >
-        Tighten validation, avoid client/server drift, and make structures robust.      
+        Tighten validation, avoid client/server drift, and make structures robust.
       type: object
       properties:
         description:
@@ -493,8 +493,8 @@ components:
             operator:
               description: |
                 Logical operator combining the results of all actions:
-                - **and**: all actions must succeed; processing stops on first failure  
-                - **or**: failed actions are skipped  
+                - **and**: all actions must succeed; processing stops on first failure
+                - **or**: failed actions are skipped
               type: string
               enum: [and, or]
               default: and
@@ -502,21 +502,21 @@ components:
     CamaraAction:
       type: object
       description: |
-        Extends a standard Overlay Action-Object by 
+        Extends a standard Overlay Action-Object by
         a. refining update to ONLY accept SchemaRestriction
-        b. letting the API provider pre-compute exactly which nodes will be 
-           affected, using either JSON Pointers or OpenAPI runtime expressions. 
+        b. letting the API provider pre-compute exactly which nodes will be
+           affected, using either JSON Pointers or OpenAPI runtime expressions.
            This makes it possible to:
         1. **target** an OpenAPI document fragment (via JSONPath).
         2. **Resolve** that target against an instance of the Open API schema
-            into one or more concrete locations—each expressed as either a JSON Pointer 
+            into one or more concrete locations—each expressed as either a JSON Pointer
             or an OpenAPI runtime expression.
         3. **Apply** the `update` or `remove` action deterministically to those
           resolved locations.
         By including `targetLocations`, clients can skip the extra step of evaluating
-        `target` themselves against instances of the schema, ensuring precise, 
-        unambiguous application and enabling robust validation through attached `SchemaRestrictions`. 
-        When targetLocations is present, any target value MUST be ignored.    
+        `target` themselves against instances of the schema, ensuring precise,
+        unambiguous application and enabling robust validation through attached `SchemaRestrictions`.
+        When targetLocations is present, any target value MUST be ignored.
       allOf:
         - $ref: '#/components/schemas/Action'
       properties:
@@ -527,16 +527,16 @@ components:
         targetLocations:
           description: |
             A non-empty list of explicit document locations—specified as a
-              InstanceLocation. These values override the generic `target` 
+              InstanceLocation. These values override the generic `target`
               selector.
-              
+
               All entries MUST use the same syntax (Runtime Expression or JSON Pointer).
           type: array
           minItems: 1
           maxItems: 30
           items:
             $ref: '#/components/schemas/InstanceLocation'
-        # refinement of update - it can only take on 
+        # refinement of update - it can only take on
         update:
           description: update of schema restrictions
           type: object
@@ -607,12 +607,12 @@ components:
     SchemaRestrictions:
       description: |
         A set of schema constraints evaluated against a single target.
-        - **restrictions** - An array (min = 1) of `SchemaRestriction` objects.  
+        - **restrictions** - An array (min = 1) of `SchemaRestriction` objects.
           Each restriction returns a Boolean result when applied to the target.
         - **operator** - Optional logical operator that combines the restriction
-          results. Supported values are: **and** (default), **or**, **not**.  
+          results. Supported values are: **and** (default), **or**, **not**.
           When a single restrictions is supplied, **not** negates that result.
-        If `operator` is omitted, **and** is assumed. 
+        If `operator` is omitted, **and** is assumed.
         If only one restriction is present, `operator: not` will negate it. Values of `operator: and` and
         `operator: or` are ignored.
         If `operator` is present, `restrictions` **MUST** also be present.
@@ -628,8 +628,8 @@ components:
         operator:
           description: |
             Logical operator that combines the results of all restrictions.
-            - **and** - All restrictions MUST be true.  
-            - **or** - At least one restriction MUST be true.  
+            - **and** - All restrictions MUST be true.
+            - **or** - At least one restriction MUST be true.
             - **not** - No restriction MAY be true.  For a single restriction this simply negates the result.
           type: string
           enum: [and, or, not]
@@ -637,7 +637,7 @@ components:
       required: [restrictions]
     SchemaRestriction:
       description: |
-        Single schema update that refines and restricts the target.  
+        Single schema update that refines and restricts the target.
         This update **MUST** be compatible with the referenced target.
       type: object
       anyOf:
@@ -912,7 +912,7 @@ components:
       required: [footprints]
     CapabilitySetBitmap:
       description: |
-        Associates a capability with one or more RestrictionSets 
+        Associates a capability with one or more RestrictionSets
         define through a bitmap position.
       type: object
       allOf:

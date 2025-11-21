@@ -1,3 +1,4 @@
+---
 openapi: 3.0.3
 info:
   title: Overlay
@@ -9,45 +10,40 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: wip
+  version: 1.0.1
 externalDocs:
   description: OpenAPI Overlay Specification
   url: https://spec.openapis.org/overlay/v1.0.0.html
 paths: {}
-
 components:
   schemas:
     Overlay:
       description: |
         Common attributes of openAPI overlay [specification]("https://spec.openapis.org/overlay/latest.html").
-
-        The list of actions MUST be applied in sequential order to ensure a consistent outcome. Actions are applied to
-        the result of the previous action. This enables objects to be deleted in one action and then re-created in a
-        subsequent action, for example.
-
-        The extends property can be used to indicate that the Overlay was designed to update a specific document. Where no extends
+        The list of actions MUST be applied in sequential order to ensure a consistent outcome. Actions are applied to 
+        the result of the previous action. This enables objects to be deleted in one action and then re-created in a 
+        subsequent action, for example. 
+        The extends property can be used to indicate that the Overlay was designed to update a specific document. Where no extends 
         is provided this implementation assumes an instance of the Components object '#/components/schemas/Components' is the 'document' root.
       type: object
       properties:
         info:
-          $ref: "#/components/schemas/Info-Object"
+          $ref: '#/components/schemas/Info-Object'
         extends:
           allOf:
-          - $ref: "#/components/schemas/Extends"
+            - $ref: '#/components/schemas/Extends'
           description: |
-            URI of the document to overlay.
+            URI of the document to overlay.  
             Defaults to the root Components object if omitted.
         actions:
-          $ref: "#/components/schemas/Actions"
+          $ref: '#/components/schemas/Actions'
       required: [actions]
-
     Extends:
       description: |
         URI reference that identifies the target document this overlay applies to.
       type: string
       format: uri
       minLength: 1
-
     Info-Object:
       description: Information Object
       type: object
@@ -59,18 +55,16 @@ components:
           type: string
           minLength: 1
       required: [title, version]
-
     Actions:
-      description: A non-empty, ordered list of actions to be applied to the target document.
+      description: A non-empty, ordered list of actions to be applied to the target
+        document.
       type: array
       minItems: 1
       uniqueItems: true
       items:
-        $ref: "#/components/schemas/Action-Object"
-
+        $ref: '#/components/schemas/Action-Object'
     Action-Object:
       type: object
-      additionalProperties: false
       description: |
         Describes a change to be applied to every node selected by **target**.
         Exactly one of **update** or **remove** MUST be present (XOR).
@@ -79,25 +73,24 @@ components:
           type: string
           pattern: ^\$
           description: |
-            **JSONPath** (RFC 9535 §4) selector that yields zero or more **non-null**
+            **JSONPath** (RFC 9535 §4) selector that yields zero or more **non-null** 
             nodes or "results". The results MAY resolve to an object or array.
-
-            **JSONPath** (RFC 9535 §4) examples:
-              `$.paths['/foo'].get` &nbsp;&nbsp;`$..security[*]`
+            **JSONPath** (RFC 9535 §4) examples:  
+              `$.paths['/foo'].get` &nbsp;&nbsp;`$..security[*]` 
         update:
           type: object
           description: |
             A non-null replacement fragment to apply to the selected node(s).
           example:
-            foo: "bar"
+            foo: bar
         remove:
           type: boolean
           description: |
             When **true**, the selected node(s) are deleted
           default: false
           example: true
-      oneOf:                     # — enforce update xor remove —
+      oneOf:  # — enforce update xor remove —
         - required: [update]
-          not: { required: [remove] }
+          not: {required: [remove]}
         - required: [remove]
-          not: { required: [update] }
+          not: {required: [update]}

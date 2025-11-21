@@ -225,7 +225,7 @@ components:
               type: string
               description: REQUIRED. The unique identifier of the subscription in
                 the scope of the subscription manager.
-              example: 1119920371
+              example: '1119920371'
       required: [id, sink, protocol]
     Protocol:
       type: string

@@ -1,3 +1,4 @@
+---
 openapi: 3.0.3
 info:
   title: Extended CloudEvents Subscriptions API for CAMARA
@@ -15,7 +16,8 @@ info:
        - `config.subscriptionStartTime`: optional timestamp (ISO 8601) to include past events
        - (optional) `config.cacheResyncRequest`: `true` to request current state resync
        - (optional) `config.eventResyncRequest`: `true` + `config.eventResyncTime` to request historical backlog
-       • Server responds **201 Created** with subscription metadata.
+
+       Server responds **201 Created** with subscription metadata.
 
     2. **Cache state delivery** *(if `cacheResyncRequest=true`)*
        Immediately pushes snapshot of **current state event** of subscribed event 'type'. This snapshot reflects the relevant latest known state of the 'type' of the subscription.
@@ -37,53 +39,132 @@ info:
        - **Idempotency**: each CloudEvent `id` is unique; consumers must dedupe.
        - **Acknowledgement**: HTTP 2xx confirms receipt; failures trigger retries.
 
+    6. **Notification polcies**
+
+       - What does `periodicity` mean?
+        The `periodicity` field allows an API consumer to request **scheduled (periodic) event deliveries**
+        instead of relying on continuous or ad-hoc triggers.
+        Its value is an [ISO-8601 duration](https://en.wikipedia.org/wiki/ISO_8601#Durations)
+        (for example, `PT1H` = every 1 hour, `PT15M` = every 15 minutes, `P1D` = once per day).
+
+       - How does the server interpret `periodicity`?
+        When 'periodicity` is provided, the Subscription Manager creates a **scheduler** for that subscription:
+          - The first tick occurs at `startsAt` (or the next alignment boundary ≥ now if `alignment` is given).
+          - Subsequent ticks occur every *periodicity* interval until `expiresAt` or explicit `DELETE`.
+          - At each tick, the server generates a CloudEvent for the configured `eventMode`:
+            - `snapshot`: full current dataset (even if unchanged)
+            - `changes`: only if a change occurred since the previous tick
+            - `digest`: aggregated metrics over the interval defined by `window` (defaults to `periodicity`)
+          - The CloudEvent `time` attribute reflects the scheduled tick instant.
+          - The CloudEvent `id` should be unique and stable for that tick,
+            for example `"<subscriptionId>:<tickStartISO>"`, so that replays can be deduplicated.
+
+       - How does alignment work with periodicity?
+        The optional `alignment` timestamp anchors the schedule to a wall-clock boundary.
+        For instance, with `periodicity: PT1H` and `alignment: 2025-10-29T12:00:00Z`,
+        events are delivered at 12:00, 13:00, 14:00, and so on.
+
+       - What if no change occurs during a tick?
+          - For `eventMode: snapshot`, the server still emits a CloudEvent snapshot.
+          - For `eventMode: changes`, the server MAY suppress emission,
+            or MAY send a minimal heartbeat event with `data.noChange: true`.
+          - For `eventMode: digest`, the server emits aggregated statistics regardless of change.
+
+       - How does this interact with subscription lifecycle?
+          - `ACTIVE` subscriptions continue periodic emission until `expiresAt` or `DELETE`.
+          - When the scheduler reaches `expiresAt`, the subscription status transitions to `EXPIRED`.
+          - Manual suspension (`PATCH` to `INACTIVE`) pauses the scheduler.
+          - Manual deletion (`DELETE`) terminates the schedule permanently.
+
+       - What if `periodicity` is omitted?
+        The subscription behaves as a **pure event-driven (triggered) subscription**,
+        generating events immediately upon relevant state changes, with no scheduling.
+
+       - Can multiple periodicities be requested in one subscription?
+        No. Each subscription has exactly one cadence.
+        To obtain data at different cadences (e.g., hourly and daily),
+        create separate subscriptions with distinct `periodicity` values.
+
+       - How is reliability handled for periodic emissions?
+        Each generated CloudEvent follows the same delivery guarantees
+        (retry policy, `data.syncStatus`, and backoff settings)
+        as other events defined in the CAMARA Event Subscription and Notification Guide.
+
+    7. **Enforce service-specific, fine-grained entitlements**
+
+       - Use CloudEvents only to carry event data; security is enforced before events are created or delivered. The CloudEvents AuthContext extension
+        (https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/authcontext.md) is explicitly informational, not a security mechanism.
+
+       - Document service-specific requirements in vendor extension (x-camara-entitlements) inside each service's pathless YAML; let your gateway/service read these at runtime or in CI.
+
+       - For truly fine-grained grants (specific event types, filters, regions, device sets), use OAuth 2.0 Rich Authorization Requests (RAR) and/or Resource Indicators avoiding scope explosion.
+
+       - Authorization layer (IdP + gateway/service):
+
+          At authorization time: the client requests access using RAR authorization_details describing the subscription they want (service, event types, filters). The Authorization (Auth) Server
+          issues a token embedding these details (or a reference), plus coarse scope(s).
+
+          At subscription creation time: the POST /subscriptions handler:
+
+            - Parses the request (eventTypes, filters, target service).
+
+            - Loads the service's x-camara-entitlements (from the service YAML or a prebuilt registry).
+
+            - Verifies the caller's token:
+
+               - Has the coarse scope (events:subscribe)?
+
+               - Matches RAR details (event types, filters, service)?
+
+               - Satisfies any roles/claims declared for those event types in x-camara-entitlements?
+          Optionally bind tokens to a resource indicator so a token is issued for a specific service domain (e.g., resource=urn:camara:connected-network-type) to keep cross-service abuse in check.
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: wip
-  x-camara-commonalities: 0.6.0
-
+  x-camara-commonalities: tbd
 tags:
-  - name: CAMARA Extended CloudEvents Common Subscription
-    description: Operations to manage subscriptions for receiving notifications on CAMARA common cloud events.
-
+  - name: CAMARA Extended CloudEvents Subscription
+    description: Operations to manage subscriptions for receiving notifications on
+      CAMARA CloudEvents.
 servers:
-  - url: "{apiRoot}"
+  - url: '{apiRoot}'
     variables:
       apiRoot:
         default: http://localhost:9091
-        description: API root, defined by the service provider, e.g. api.example.com or api.example.com/somepath
-
+        description: API root, defined by the service provider, e.g. api.example.com
+          or api.example.com/somepath
 paths:
   /subscriptions:
     post:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
-      summary: "Create a subscription for receiving notifications on the common CAMARA CloudEvents."
-      description: Create a subscription for receiving notifications on the common CAMARA CloudEvents.
+      tags: [CAMARA Extended CloudEvents Subscription]
+      summary: Create a CAMARA CloudEvents subscription for receiving callbacks
+      description: |
+        Create a CAMARA CloudEvents subscription for receiving callbacks.
+        Implementations SHOULD perform CloudEvents HTTP WebHook validation before first delivery and MAY return 202 Accepted with status=ACTIVATION_REQUESTED until validation completes.
       operationId: createCamaraCloudEventsSubscription
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/x-correlator'
       security:
         - openId:
-            - camara-cloudevents-subscriptions:org.camaraproject.camara-cloudevents-subscriptions.v0.common:create
+            - camara-cloudevents-subscriptions:org.camaraproject.camara-cloudevents-subscriptions.v0.common:create  # coarse scope only
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CamaraExtendedSubscriptionRequest"
+              $ref: '#/components/schemas/CamaraExtendedSubscriptionRequest'
       callbacks:
         notifications:
-          "{$request.body#/sink}":
+          '{$request.body#/sink}':
             post:
-              summary: "notifications callback"
+              summary: CAMARA CloudEvents notifications callback
               description: |
                 Important: this endpoint is to be implemented by the API consumer.
                 The CAMARA Cloud Events server will call this endpoint whenever the common CAMARA CloudEvents.
               operationId: postCamaraCloudEventsNotification
               parameters:
-                - $ref: "#/components/parameters/x-correlator"
+                - $ref: '#/components/parameters/x-correlator'
               requestBody:
                 required: true
                 content:
@@ -91,74 +172,149 @@ paths:
                     schema:
                       type: array
                       items:
-                        $ref: "#/components/schemas/CamaraExtendedCloudEventsAttribute"
+                        $ref: '#/components/schemas/CamaraExtendedCloudEventsAttribute'
               responses:
-                "204":
+                '204':
                   description: Successful notification
                   headers:
                     x-correlator:
-                      $ref: "#/components/headers/x-correlator"
-                "400":
-                  $ref: "#/components/responses/Generic400"
-                "401":
-                  $ref: "#/components/responses/Generic401"
-                "403":
-                  $ref: "#/components/responses/Generic403"
-                "410":
-                  $ref: "#/components/responses/Generic410"
-                "429":
-                  $ref: "#/components/responses/Generic429"
+                      $ref: '#/components/headers/x-correlator'
+                '400':
+                  $ref: '#/components/responses/Generic400'
+                '401':
+                  $ref: '#/components/responses/Generic401'
+                '403':
+                  $ref: '#/components/responses/Generic403'
+                '410':
+                  $ref: '#/components/responses/Generic410'
+                '429':
+                  $ref: '#/components/responses/Generic429'
+              security:
+                - notificationsBearerAuth: []
+        webhookValidation:
+          '{$request.body#/sink}':
+            options:
+              summary: CAMARA CloudEvents HTTP WebHook validation callback
+              operationId: optionsCamaraCloudEventsWebhookValidation
+              parameters:
+                - $ref: '#/components/parameters/x-correlator'
+                - in: header
+                  name: WebHook-Request-Origin
+                  required: true
+                  schema: {type: string}
+                  description: Origin of the WebHook sender per CloudEvents HTTP WebHook
+                    1.0.x.
+              responses:
+                '200':
+                  description: Sink allows delivery from this origin.
+                  headers:
+                    x-correlator:
+                      $ref: '#/components/headers/x-correlator'
+                    WebHook-Allowed-Origin:
+                      schema: {type: string}
+                      description: Echo of the approved origin.
+                '403':
+                  $ref: '#/components/responses/Generic403'
+        subscriptionLifecycle:
+          '{$request.body#/sink}':
+            post:
+              summary: CAMARA CloudEvents subscription lifecycle callback
+              description: >
+                One CloudEvents 'type' with three payload formats, distinguished by
+                'datacontenttype':
+                - application/json-patch+json: data is a JSON Patch (RFC 6902) array
+                - application/merge-patch+json: data is a JSON Merge Patch (RFC 7396)
+                document
+                - application/json: data is a full {previous,current} snapshot
+              operationId: postCamaraCloudEventsSubscriptionLifecycleNotification
+              parameters:
+                - $ref: '#/components/parameters/x-correlator'
+              requestBody:
+                required: true
+                content:
+                  application/cloudevents+json:
+                    schema:
+                      oneOf:
+                        - $ref: '#/components/schemas/CamaraConfigChangeEventJsonPatch'
+                        - $ref: '#/components/schemas/CamaraConfigChangeEventMergePatch'
+                        - $ref: '#/components/schemas/CamaraConfigChangeEventSnapshot'
+                      discriminator:
+                        propertyName: datacontenttype
+                        mapping:
+                          application/json-patch+json: '#/components/schemas/CamaraConfigChangeEventJsonPatch'
+                          application/merge-patch+json: '#/components/schemas/CamaraConfigChangeEventMergePatch'
+                          application/json: '#/components/schemas/CamaraConfigChangeEventSnapshot'
+              responses:
+                '204':
+                  description: Successful lifecycle notification
+                  headers:
+                    x-correlator:
+                      $ref: '#/components/headers/x-correlator'
+                '400':
+                  $ref: '#/components/responses/Generic400'
+                '401':
+                  $ref: '#/components/responses/Generic401'
+                '403':
+                  $ref: '#/components/responses/Generic403'
+                '410':
+                  $ref: '#/components/responses/Generic410'
+                '429':
+                  $ref: '#/components/responses/Generic429'
               security:
                 - notificationsBearerAuth: []
       responses:
-        "201":
-          description: Created (Successful creation of subscription)
+        '201':
+          description: Created (Successful creation of subscription) and validation
+            not required or already satisfied.
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
+              $ref: '#/components/headers/x-correlator'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Accept-Patch:
+              $ref: '#/components/headers/Accept-Patch'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CamaraExtendedSubscription"
-        "202":
-          description: Request accepted to be processed. It applies for async creation process.
+                $ref: '#/components/schemas/CamaraExtendedSubscription'
+        '202':
+          description: Request accepted to be processed. It applies for async creation
+            process. When subscription created, validation handshake is pending per
+            CloudEvents HTTP WebHook.
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
+              $ref: '#/components/headers/x-correlator'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionAsync"
-        "400":
-          $ref: "#/components/responses/CreateSubscriptionBadRequest400"
-        "401":
-          $ref: "#/components/responses/Generic401"
-        "403":
-          $ref: "#/components/responses/SubscriptionPermissionDenied403"
-        "409":
-          $ref: "#/components/responses/Generic409"
-        "422":
-          $ref: "#/components/responses/CreateSubscriptionUnprocessableEntity422"
-        "429":
-          $ref: "#/components/responses/Generic429"
-
+                $ref: '#/components/schemas/SubscriptionAsync'
+        '400':
+          $ref: '#/components/responses/CreateSubscriptionBadRequest400'
+        '401':
+          $ref: '#/components/responses/Generic401'
+        '403':
+          $ref: '#/components/responses/SubscriptionPermissionDenied403'
+        '409':
+          $ref: '#/components/responses/Generic409'
+        '422':
+          $ref: '#/components/responses/CreateSubscriptionUnprocessableEntity422'
+        '429':
+          $ref: '#/components/responses/Generic429'
     get:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
-      summary: "Retrieve a list of CAMARA CloudEvents subscription"
+      tags: [CAMARA Extended CloudEvents Subscription]
+      summary: Retrieve CAMARA CloudEvents subscriptions
       description: Retrieve a list of CAMARA CloudEvents subscription(s)
       operationId: retrieveCamaraCloudEventsSubscriptionList
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/x-correlator'
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:read
+        - openId: [camara-cloudevents-subscriptions:read]
       responses:
-        "200":
+        '200':
           description: List of event subscription details
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
+              $ref: '#/components/headers/x-correlator'
           content:
             application/json:
               schema:
@@ -166,207 +322,287 @@ paths:
                 minItems: 0
                 items:
                   $ref: '#/components/schemas/CamaraExtendedSubscription'
-        "400":
-          $ref: "#/components/responses/Generic400"
-        "401":
-          $ref: "#/components/responses/Generic401"
-        "403":
-          $ref: "#/components/responses/Generic403"
-
+        '400':
+          $ref: '#/components/responses/Generic400'
+        '401':
+          $ref: '#/components/responses/Generic401'
+        '403':
+          $ref: '#/components/responses/Generic403'
     options:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
-      operationId: getCamaraCloudEventsFeatures
-      summary: getFeatures
+      tags: [CAMARA Extended CloudEvents Subscription]
+      summary: Discover CAMARA CloudEvents subscriptions features
       description: Discover supported features and methods for this endpoint
+      operationId: getCamaraCloudEventsFeatures
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/x-correlator'
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:read
+        - openId: [camara-cloudevents-subscriptions:read]
       responses:
-        "200":
+        '200':
           description: OK
           headers:
             Allow:
               schema:
                 type: string
-                default: "GET,POST,OPTIONS"
+                default: GET,POST,OPTIONS
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
-        "400":
-          $ref: "#/components/responses/Generic400"
-
+              $ref: '#/components/headers/x-correlator'
+        '400':
+          $ref: '#/components/responses/Generic400'
   /subscriptions/{id}:
     get:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
-      summary: "Retrieve a CAMARA CloudEvents subscription metadata"
-      description: retrieve CAMARA CloudEvents subscription metadata.
+      tags: [CAMARA Extended CloudEvents Subscription]
+      summary: Retrieve a CAMARA CloudEvents subscription
+      description: retrieve CAMARA CloudEvents subscription.
       operationId: retrieveCamaraCloudEventsSubscription
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:read
+        - openId: [camara-cloudevents-subscriptions:read]
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
-        - $ref: "#/components/parameters/SubscriptionId"
-        - $ref: "#/components/parameters/If-None-Match"
-        - $ref: "#/components/parameters/If-Modified-Since"
+        - $ref: '#/components/parameters/x-correlator'
+        - $ref: '#/components/parameters/SubscriptionId'
+        - $ref: '#/components/parameters/If-None-Match'
+        - $ref: '#/components/parameters/If-Modified-Since'
       responses:
-        "200":
+        '200':
           description: |
             Subscription metadata.
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
+              $ref: '#/components/headers/x-correlator'
             ETag:
               $ref: '#/components/headers/ETag'
             Cache-Control:
               $ref: '#/components/headers/Cache-Control'
             Last-Modified:
               $ref: '#/components/headers/Last-Modified'
+            Accept-Patch:
+              $ref: '#/components/headers/Accept-Patch'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CamaraExtendedSubscription"
-        "400":
-          $ref: "#/components/responses/SubscriptionIdRequired400"
-        "401":
-          $ref: "#/components/responses/Generic401"
-        "403":
-          $ref: "#/components/responses/Generic403"
-        "404":
-          $ref: "#/components/responses/Generic404"
-        "409":
-          $ref: "#/components/responses/Generic409"
-
+                $ref: '#/components/schemas/CamaraExtendedSubscription'
+        '304':
+          $ref: '#/components/responses/Generic304'
+        '400':
+          $ref: '#/components/responses/SubscriptionIdRequired400'
+        '401':
+          $ref: '#/components/responses/Generic401'
+        '403':
+          $ref: '#/components/responses/Generic403'
+        '404':
+          $ref: '#/components/responses/Generic404'
+        '409':
+          $ref: '#/components/responses/Generic409'
     put:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
+      tags: [CAMARA Extended CloudEvents Subscription]
       operationId: updateCamaraCloudEventsSubscription
-      summary: updateCamaraCloudEventsSubscription
-      description: Update a CAMARA CloudEvents subscription
+      summary: Update CAMARA CloudEvents subscription
+      description: >
+        Update a CAMARA CloudEvents subscription (full update). The request body MUST
+        contain a full Subscription representation.
+        Enforce 422 for forbidden transitions; 412 for ETag mismatches; 409 for already-final
+        states. If status: "EXPIRED" is, then sends 422.
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:update
+        - openId: [camara-cloudevents-subscriptions:put]
       parameters:
-        - $ref: "#/components/parameters/SubscriptionId"
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/SubscriptionId'
+        - $ref: '#/components/parameters/x-correlator'
+        - $ref: '#/components/parameters/If-Match'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CamaraExtendedSubscription"
+              $ref: '#/components/schemas/CamaraExtendedSubscriptionMergePatch'
       responses:
-        "200":
+        '200':
           description: OK
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CamaraExtendedSubscription"
-        "400":
-          $ref: "#/components/responses/CreateSubscriptionBadRequest400"
-        "404":
-          $ref: "#/components/responses/Generic404"
-
+                $ref: '#/components/schemas/CamaraExtendedSubscription'
+        '204':
+          description: Updated, no content
+          headers:
+            x-correlator:
+              $ref: '#/components/headers/x-correlator'
+        '400':
+          $ref: '#/components/responses/CreateSubscriptionBadRequest400'
+        '404':
+          $ref: '#/components/responses/Generic404'
+        '409':
+          $ref: '#/components/responses/Generic409'
+        '412':
+          $ref: '#/components/responses/Generic412'
+        '422':
+          $ref: '#/components/responses/CreateSubscriptionUnprocessableEntity422'
+    patch:
+      tags: [CAMARA Extended CloudEvents Subscription]
+      operationId: patchCamaraCloudEventsSubscription
+      summary: Partially modify CAMARA CloudEvents subscription
+      description: >
+        Apply partial modifications using JSON Merge Patch (RFC 7396) using application/merge-patch+json
+        or JSON Patch (RFC 6902) using application/json-patch+json.
+        The PATCH shape follows the HTTP/PATCH spec (RFC 5789), supports both Merge
+        Patch (RFC 7396) and JSON Patch (RFC 6902), and advertises formats via the
+        Accept-Patch response header.
+        Enforce 422 for forbidden transitions; 412 for ETag mismatches; 409 for already-final
+        states. If status: "EXPIRED" is, then sends 422.
+      security:
+        - openId: [camara-cloudevents-subscriptions:patch]
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionId'
+        - $ref: '#/components/parameters/x-correlator'
+        - $ref: '#/components/parameters/If-Match'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/CamaraExtendedSubscriptionMergePatch'
+          application/json-patch+json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CamaraExtendedJsonPatchOperation'
+            examples:
+              pauseSubscription:
+                summary: Set status via JSON Patch
+                value:
+                  - op: replace
+                    path: /status
+                    value: INACTIVE
+              resumeSubscription:
+                summary: Resume via JSON Patch
+                value:
+                  - op: replace
+                    path: /status
+                    value: ACTIVE
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CamaraExtendedSubscription'
+        '204':
+          description: Updated, no content
+          headers:
+            x-correlator:
+              $ref: '#/components/headers/x-correlator'
+        '400':
+          $ref: '#/components/responses/CreateSubscriptionBadRequest400'
+        '404':
+          $ref: '#/components/responses/Generic404'
+        '409':
+          $ref: '#/components/responses/Generic409'
+        '412':
+          $ref: '#/components/responses/Generic412'
+        '415':
+          $ref: '#/components/responses/Generic415'
+        '422':
+          $ref: '#/components/responses/CreateSubscriptionUnprocessableEntity422'
     delete:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
-      summary: "Delete CamaraCloudEvents subscription"
+      tags: [CAMARA Extended CloudEvents Subscription]
+      summary: Delete CAMARA CloudEvents subscription
       operationId: deleteCamaraCloudEventsSubscription
       description: delete a given CAMARA CloudEvents subscription.
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:delete
+        - openId: [camara-cloudevents-subscriptions:delete]
       parameters:
-        - $ref: "#/components/parameters/SubscriptionId"
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/SubscriptionId'
+        - $ref: '#/components/parameters/x-correlator'
       responses:
-        "204":
+        '204':
           description: CAMARA CloudEvents subscription deleted
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
-        "202":
-          description: Request accepted to be processed. It applies for async deletion process.
+              $ref: '#/components/headers/x-correlator'
+        '202':
+          description: Request accepted to be processed. It applies for async deletion
+            process.
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
+              $ref: '#/components/headers/x-correlator'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionAsync"
-        "400":
-          $ref: "#/components/responses/SubscriptionIdRequired400"
-        "401":
-          $ref: "#/components/responses/Generic401"
-        "403":
-          $ref: "#/components/responses/Generic403"
-        "404":
-          $ref: "#/components/responses/Generic404"
-
+                $ref: '#/components/schemas/SubscriptionAsync'
+        '400':
+          $ref: '#/components/responses/SubscriptionIdRequired400'
+        '401':
+          $ref: '#/components/responses/Generic401'
+        '403':
+          $ref: '#/components/responses/Generic403'
+        '404':
+          $ref: '#/components/responses/Generic404'
     options:
-      tags:
-        - CAMARA Extended CloudEvents Common Subscription
+      tags: [CAMARA Extended CloudEvents Subscription]
       operationId: getCamaraCloudEventsSubscriptionFeatures
-      summary: getSubscriptionFeatures
+      summary: Discover CAMARA CloudEvents subscription features
       description: Discover supported features and methods for this endpoint
       security:
-        - openId:
-            - camara-cloudevents-subscriptions:read
+        - openId: [camara-cloudevents-subscriptions:read]
       parameters:
-        - $ref: "#/components/parameters/SubscriptionId"
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/SubscriptionId'
+        - $ref: '#/components/parameters/x-correlator'
       responses:
-        "200":
+        '200':
           description: OK
           headers:
             Allow:
               schema:
                 type: string
-                default: "GET,PUT,DELETE,OPTIONS"
+                default: GET,PUT,PATCH,DELETE,OPTIONS
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
-        "400":
-          $ref: "#/components/responses/Generic400"
-
+              $ref: '#/components/headers/x-correlator'
+        '400':
+          $ref: '#/components/responses/Generic400'
 components:
   securitySchemes:
     openId:
-      $ref: 'CAMARA_common.yaml#/components/securitySchemes/openId'
+      $ref: CAMARA_common.yaml#/components/securitySchemes/openId
     notificationsBearerAuth:
-      $ref: 'CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth'
-
+      $ref: CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
   parameters:
     SubscriptionId:
       name: id
       in: path
-      description: Subscription identifier that was obtained from the create event subscription operation.
+      description: Subscription identifier that was obtained from the create event
+        subscription operation.
       required: true
       schema:
-        $ref: "#/components/schemas/SubscriptionId"
+        $ref: '#/components/schemas/SubscriptionId'
     x-correlator:
-      $ref: 'CAMARA_common.yaml#/components/parameters/x-correlator'
+      $ref: CAMARA_common.yaml#/components/parameters/x-correlator
     If-None-Match:
-      $ref: 'CAMARA_common.yaml#/components/parameters/If-None-Match'
+      $ref: CAMARA_common.yaml#/components/parameters/If-None-Match
     If-Modified-Since:
-      $ref: 'CAMARA_common.yaml#/components/parameters/If-Modified-Since'
-
+      $ref: CAMARA_common.yaml#/components/parameters/If-Modified-Since
+    If-Match:
+      $ref: CAMARA_common.yaml#/components/parameters/If-Match
   headers:
     x-correlator:
-      $ref: 'CAMARA_common.yaml#/components/headers/x-correlator'
+      $ref: CAMARA_common.yaml#/components/headers/x-correlator
     Cache-Control:
-      $ref: 'CAMARA_common.yaml#/components/headers/Cache-Control'
+      $ref: CAMARA_common.yaml#/components/headers/Cache-Control
     ETag:
-      $ref: 'CAMARA_common.yaml#/components/headers/ETag'
+      $ref: CAMARA_common.yaml#/components/headers/ETag
     Last-Modified:
-      $ref: 'CAMARA_common.yaml#/components/headers/Last-Modified'
-
+      $ref: CAMARA_common.yaml#/components/headers/Last-Modified
+    Accept-Patch:
+      $ref: CAMARA_common.yaml#/components/headers/Accept-Patch
   schemas:
     ErrorInfo:
-      $ref: 'CAMARA_common.yaml#/components/schemas/ErrorInfo'
-
+      $ref: CAMARA_common.yaml#/components/schemas/ErrorInfo
+    ResourceScopes:
+      $ref: CAMARA_common.yaml#/components/schemas/ResourceScopes
     SubscriptionId:
       type: string
       description: |
@@ -374,73 +610,168 @@ components:
         within an event notification, this concept SHALL be referred as `subscriptionId` as per [Commonalities Event Notification
         Model](https://github.com/camaraproject/Commonalities/blob/main/documentation/API-design-guidelines.md#122-event-notification).
       example: qs15-h556-rt89-1298
-
     SubscriptionAsync:
-      description: Response for an event-type subscription request managed asynchronously (Creation or Deletion).
+      description: Response for an event-type subscription request managed asynchronously
+        (Creation or Deletion).
       type: object
       properties:
         id:
-          $ref: "#/components/schemas/SubscriptionId"
-
-    CamaraExtendedSubscriptionRequest:
+          $ref: '#/components/schemas/SubscriptionId'
+      required: [id]
+    CamaraSubCreateOnly:
       type: object
-      additionalProperties: false
       description: |
-        Extended subscription request with enhanced config options.
+        Extended subscription request with enhanced config creation only options.
+      properties:
+        config:
+          $ref: '#/components/schemas/CamaraSubscriptionConfigCreateOnly'
+    CamaraSubUpdatable:
+      type: object
+      description: |
+        Extended subscription enhanced config updatable options at POST and change later.
       allOf:
-        - $ref: 'subscriptions-openapi.yaml#/components/schemas/SubscriptionRequest'
+        - $ref: subscriptions-openapi.yaml#/components/schemas/SubscriptionRequest
         - type: object
           properties:
             config:
-              $ref: "#/components/schemas/CamaraSubscriptionConfig"
-          required:
-            - types
-            - config
-
+              $ref: '#/components/schemas/CamaraSubscriptionConfigUpdatable'
+      required: [types, config]
+    CamaraSubUpdateOnly:
+      type: object
+      description: |
+        Extended subscription enhanced config update only options. It toggles only meaningful post-creation option.
+      properties:
+        config:
+          $ref: '#/components/schemas/CamaraSubscriptionConfigUpdateOnly'
+    CamaraSubOutputOnly:
+      type: object
+      description: |
+        Extended subscription output only attribute.
+      properties:
+        id:
+          $ref: '#/components/schemas/SubscriptionId'
+        config:
+          $ref: '#/components/schemas/CamaraSubscriptionConfigOutputOnly'
+    CamaraExtendedSubscriptionRequest:
+      type: object
+      description: |
+        Extended subscription create request with enhanced config options.
+      allOf:
+        - $ref: '#/components/schemas/CamaraSubCreateOnly'
+        - $ref: '#/components/schemas/CamaraSubUpdatable'
     CamaraExtendedSubscription:
       type: object
       additionalProperties: false
-      title: "Subscription"
-      allOf:
-        - $ref: "#/components/schemas/CamaraExtendedSubscriptionRequest"
-        - type: object
-          properties:
-            id:
-              $ref: "#/components/schemas/SubscriptionId"
-      required:
-        - id
-        - sink
-        - protocol
-
-    CamaraSubscriptionConfig:
+      title: CamaraExtendedSubscription
       description: |
-        Implementation-specific configuration parameters are needed by the subscription manager for acquiring events.
-        In CAMARA we have predefined attributes like `subscriptionExpireTime`, `subscriptionMaxEvents`, `initialEvent`.
-        Specific event type attributes must be defined in `subscriptionDetail`.
+        Camara extended subscription.
+      allOf:
+        - $ref: '#/components/schemas/CamaraSubCreateOnly'
+        - $ref: '#/components/schemas/CamaraSubUpdatable'
+        - $ref: '#/components/schemas/CamaraSubOutputOnly'
+    CamaraExtendedSubscriptionMergePatch:
+      type: object
+      additionalProperties: true
+      description: JSON Merge Patch (RFC 7396) over the set of fields that are mutable
+        post-creation. Only UpdateOnly and Updatable. Everything optional + nullable,
+        per RFC 7396.
+      allOf:
+        - $ref: '#/components/schemas/CamaraSubUpdateOnly'
+        - $ref: '#/components/schemas/CamaraSubUpdatable'
+    CamaraSubscriptionConfigCreateOnly:
+      description: |
+        Implementation-specific configuration parameters are needed by the subscription manager for acquiring events at POST.
+        In CAMARA we have predefined attributes like `initialEvent`.
         Note: If a request is performed for several event types, all subscribed events will use the same `config` parameters.
       type: object
       additionalProperties: false
-      required:
-        - subscriptionDetail
       properties:
-        subscriptionDetail:
-          $ref: "#/components/schemas/SubscriptionDetail"
+        initialEvent:
+          type: boolean
+          description: |
+            Set to `true` by API consumer if consumer wants to get an event as soon as the subscription is created and current situation reflects event request. It applies to all event types.
+            Change request for this attribute using PUT or PATCH on existing subscription results in GENERIC_400_DISALLOWED_CHANGE error.
+            Example: Consumer request area entered event. If consumer sets initialEvent to true and device is already in the geofence, an event is triggered.
+    CamaraSubscriptionConfigUpdateOnly:
+      description: |
+        Implementation-specific configuration parameters are needed by the subscription manager for acquiring events at PUT or PATCH after POST.
+        Note: If a request is performed for several event types, all subscribed events will use the same `config` parameters.
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          description: |-
+            Current overall status of the subscription - Management of Subscription State engine is not mandatory for now. It is not per event type being subscribed to. Note not all statuses may be considered to be implemented. Details:
+              - `ACTIVE`: Subscription creation process is completed. Subscription is fully operative.
+              - `INACTIVE`: Subscription is temporarily inactive, but its workflow logic is not deleted.
+          enum: [ACTIVE, INACTIVE]
+    CamaraSubscriptionConfigUpdatable:
+      description: |
+        Implementation-specific configuration parameters are needed by the subscription manager for acquiring events at POST, PUT or PATCH.
+        In CAMARA we have predefined attributes like `subscriptionExpireTime`, `subscriptionMaxEvents`.
+        Specific event type attributes must be defined in `subscriptionDetails`.
+        Note: If a request is performed for several event types, all subscribed events will use the same `config` parameters.
+      type: object
+      additionalProperties: false
+      required: [subscriptionDetails]
+      properties:
+        subscriptionDetails:
+          type: array
+          description: Base schema for all domain-specific subscriptionDetail definitions.
+          nullable: true
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [types, version, details]
+            properties:
+              types:
+                type: array
+                minItems: 1
+                maxItems: 100
+                items:
+                  type: string
+                  description: subscription detail types eligible to be delivered
+                    by this subscription.
+                example:
+                  - org.camaraproject.quality-on-demand.v1.detail
+                  - org.camaraproject.geofencing-subscriptions.v1.detail
+              version:
+                type: string
+                description: Version number for this subscription detail.
+              details:
+                type: array
+                minItems: 1
+                maxItems: 100
+                description: Domain-specific attributes for the indicated subscription
+                  detail types.
+                items:
+                  $ref: '#/components/schemas/SubscriptionDetail'
         subscriptionStartTime:
           type: string
           format: date-time
-          example: "2023-01-17T13:18:23.682Z"
-          description: The subscription start time (in date-time format) requested by the API consumer.
+          example: '2023-01-17T13:18:23.682Z'
+          description: The subscription start time (in date-time format) requested
+            by the API consumer.
+          nullable: true
         subscriptionExpireTime:
           type: string
           format: date-time
-          example: "2023-01-17T13:18:23.682Z"
-          description: The subscription expiration time (in date-time format) requested by the API consumer.
+          example: '2023-01-17T13:18:23.682Z'
+          description: The subscription expiration time (in date-time format) requested
+            by the API consumer. Set this attribute to a time value in the past results
+            in GENERIC_400_DENIED_CHANGE error.
+          nullable: true
         subscriptionMaxEvents:
           type: integer
           description: |
-            Identifies the maximum number of event reports to be generated (>=1) requested by the API consumer - Once this number is reached, the subscription ends.
+            Identifies the maximum total number of event reports to be generated (>=1) requested by the API consumer - Once this number is reached, the subscription ends.
             Note on combined usage of `initialEvent` and `subscriptionMaxEvents`:
             If an event is triggered following `initialEvent` set to `true`, this event will be counted towards `subscriptionMaxEvents`.
+            It is not per event type and it is not batch count.
+          nullable: true
           minimum: 1
           example: 5
         eventBatchSize:
@@ -448,6 +779,7 @@ components:
           description: |
             Identifies the maximum number of event reports to be generated (>=1) ina a batch requested by the API consumer - Once this number is reached for current batch, the events emit to the 'sink'.
             Batching: Events are pushed in batches of up to config.eventBatchSize.
+          nullable: true
           minimum: 1
           example: 5
         cacheResyncRequest:
@@ -455,52 +787,147 @@ components:
           description: |
             Set to `true` by API consumer if consumer wants to get cached state as soon as the subscription is created.
             A cache resync isn't a request for historical event data. It only restores the current cache state.
-
             Treat a cache resync request as if 'initialEvent' = 'true' and 'subscriptionStartTime' is now. 'eventResyncTime' value, if provided, is ignored by cache resync operation.
+          nullable: true
         eventResyncTime:
           type: string
           format: date-time
-          example: "2023-01-17T13:18:23.682Z"
-          description: The event resync start time (in date-time format) requested by the API consumer.
+          example: '2023-01-17T13:18:23.682Z'
+          description: The event resync start time (in date-time format) requested
+            by the API consumer.
+          nullable: true
         eventResyncRequest:
           type: boolean
           description: |
             Set to `true` by API consumer if consumer wants to get historical events as soon as the subscription is created.
             Treat the event resync request as if 'initialEvent' = 'true' and use the provided 'eventResyncTime' in place of 'subscriptionStartTime'.
-
             Event resync becomes truly historical only if the system retains every event and can replay them all.
             In practice, we should treat event resync as a “best effort” operation, dependent on what the implementation can actually provide.
             Not every API needs or should offer a batching/resync capability.
-        initialEvent:
-          type: boolean
+          nullable: true
+        notificationPolicy:
+          $ref: '#/components/schemas/NotificationPolicy'
+    NotificationPolicy:
+      description: |
+        CloudEvents notification delivery policy.
+      type: object
+      properties:
+        periodicityResourceScopes:
+          $ref: '#/components/schemas/ResourceScopes'
+        periodicity:
+          type: string
           description: |
-            Set to `true` by API consumer if consumer wants to get an event as soon as the subscription is created and current situation reflects event request.
-            Example: Consumer request area entered event. If consumer sets initialEvent to true and device is already in the geofence, an event is triggered.
+            ISO-8601 duration indicating the **scheduled emission cadence** for this subscription.
+            When present, the server creates a scheduler that emits events on each tick until
+            `subscriptionExpireTime` or explicit deletion.
+            Semantics:
+              - Omitted ⇒ no scheduler (pure event-driven behavior).
+              - Example values:
+                  `PT1H`  → every 1 hour
+                  `PT15M` → every 15 minutes
+                  `P1D`   → once per day
+              - The first tick is determined by `subscriptionStartTime` and optional `alignment`.
+              - The CloudEvent `time` reflects the scheduled tick instant.
+          example: PT1H
+          nullable: true
+        alignment:
+          type: string
+          format: date-time
+          description: |
+            Optional **anchor timestamp** to align ticks to a wall-clock boundary.
+            If provided with `periodicity: PT1H`, ticks align to the top of the hour relative
+            to this anchor (e.g., 12:00, 13:00, 14:00…). If omitted, the first tick occurs
+            at or after `subscriptionStartTime` and subsequent ticks follow `periodicity`.
+            Notes:
+              - If `subscriptionStartTime` < now and `alignment` is set, the next tick is the
+                first aligned instant ≥ now.
+              - Must be RFC 3339/ISO 8601 timestamp.
+          example: '2025-10-29T12:00:00Z'
+          nullable: true
+        eventMode:
+          type: string
+          enum: [snapshot, changes, digest]
+          default: snapshot
+          description: |
+            Controls **what** is emitted on each scheduled tick when `periodicity` is present.
+              - `snapshot` → emit the current state for the selected `resourceScopes` every tick,
+                even if no changes occurred.
+              - `changes`  → emit only if any relevant state changed since the previous tick
+                (implementations MAY send a minimal heartbeat with `data.noChange: true`).
+              - `digest`   → emit an **aggregate** for the interval (see `window`).
+            If `periodicity` is omitted, `eventMode` has no effect.
+          nullable: true
+        window:
+          type: string
+          description: |
+            ISO-8601 duration that defines the **aggregation interval** used when
+            `eventMode: digest` is selected. Defaults to `periodicity` if not provided.
+            Examples:
+              - With `periodicity: PT1H` and `window: PT1H`, emit hourly roll-ups.
+              - With `periodicity: PT1H` and `window: P1D`, emit a daily roll-up once per hour
+                (implementations MAY coalesce and emit only on the window boundary).
+            Ignored for `snapshot` and `changes`.
+          example: PT1H
+          nullable: true
+        maxEventsPerTick:
+          type: integer
+          minimum: 1
+          description: |
+            Maximum number of CloudEvents the server may emit per scheduled tick
+            for this subscription. Used to limit fan-out when the referenced
+            `resourceScopes` include many resources (for example, a large device group).
+            Semantics:
+              - When omitted, the server uses its own internal batching policy.
+              - When provided, the server SHOULD partition the dataset and deliver
+                up to `maxEventsPerTick` events per tick, adding `data.part` /
+                `data.partCount` metadata to each CloudEvent for reassembly.
+              - This property has effect only when `periodicity` is set.
+            Example:
+              `maxEventsPerTick: 100` → emit up to 100 events each hour per tick.
+          example: 100
+          nullable: true
+        deliveryMode:
+          type: string
+          description: |
+            Defines **when** the subscription server delivers notifications
+            relative to event occurrence and policy evaluation.
+            - `IMMEDIATE`: deliver each qualifying event as soon as it is produced
+              (default CAMARA behavior, equivalent to real-time push).
+            - `PERIODIC`: deliver accumulated or aggregated results on a fixed cadence
+              defined by `periodicity` and optionally aligned using `alignment`.
+          enum: [IMMEDIATE, PERIODIC]
+          default: IMMEDIATE
+          nullable: true
+    CamaraSubscriptionConfigOutputOnly:
+      description: |
+        Implementation-specific configuration parameters output from the subscription manager for acquiring events.
+      type: object
+      additionalProperties: false
+      properties:
         startsAt:
           type: string
-          readOnly: true
           format: date-time
-          description: Date when the event subscription will begin/began. This attribute must not be present in the POST request as it is provided by API server. It must be present in GET endpoints.
+          description: Date when the event subscription will begin/began. This attribute
+            must not be present in the POST request as it is provided by API server.
+            It must be present in GET endpoints.
         expiresAt:
           type: string
-          readOnly: true
           format: date-time
           description: |
             Date when the event subscription will expire. Only provided when `subscriptionExpireTime` is indicated by API client or Telco Operator has a specific policy about that.
             This attribute must not be present in the POST request as it is provided (optionally) by API server.
             This attribute must be provided by the server if subscriptionExpireTime is provided in the request and server is not able to handle it.
+          nullable: true
         status:
           type: string
-          readOnly: true
           description: |-
-            Current status of the subscription - Management of Subscription State engine is not mandatory for now. Note not all statuses may be considered to be implemented. Details:
-              - `ACTIVATION_REQUESTED`: Subscription creation (POST) is triggered but subscription creation process is not finished yet.
+            Current overall status of the subscription - Management of Subscription State engine is not mandatory for now. It is not per event type being subscribed to. Note not all statuses may be considered to be implemented. Details:
+              - `ACTIVATION_REQUESTED`: Subscription creation (POST) is triggered but subscription creation process is not finished yet and validation handshake maybe is pending per CloudEvents HTTP WebHook.
               - `CACHE_RESYNCING`: current cache state restore in progress.
               - `CACHE_RESYNC_COMPLETED`: current cache state restored.
               - `EVENT_RESYNCING`: historical events replay in progress.
               - `EVENT_RESYNC_COMPLETED`: historical events replay completed.
               - `ACTIVE`: Subscription creation process is completed. Subscription is fully operative.
-              - `INACTIVE`: Subscription is temporarily inactive, but its workflow logic is not deleted.
               - `EXPIRED`: Subscription is ended (no longer active). This status applies when subscription is ended due to `SUBSCRIPTION_EXPIRED` or `ACCESS_TOKEN_EXPIRED` event.
               - `DELETED`: Subscription is ended as deleted (no longer active). This status applies when subscription information is kept (i.e. subscription workflow is no longer active but its meta-information is kept).
           enum:
@@ -511,13 +938,114 @@ components:
             - EVENT_RESYNC_COMPLETED
             - ACTIVE
             - EXPIRED
-            - INACTIVE
             - DELETED
-
+          nullable: true
+    CamaraExtendedJsonPatchOperation:
+      description: One RFC 6902 JSON Patch operation
+      type: object
+      additionalProperties: false
+      properties:
+        op:
+          type: string
+          description: operation
+          enum: [add, remove, replace, move, copy, test]
+        path:
+          type: string
+          description: JSON Pointer (RFC 6901)
+        from:
+          type: string
+          description: JSON Pointer; required for move/copy
+        value:
+          description: |
+            The value to be used within the operation.
+            Its type depends on the target path: it may be a string, number,
+            boolean, object, array, or null.
+          oneOf:
+            - type: string
+              nullable: true
+            - type: number
+              nullable: true
+            - type: boolean
+              nullable: true
+            - type: object
+              nullable: true
+            - type: array
+              items: {}
+              nullable: true
+      # Enforce valid combos of required fields:
+      oneOf:
+        - required: [op, path, value]  # add/replace/test
+          properties:
+            op: {enum: [add, replace, test]}
+        - required: [op, path, from]  # move/copy
+          properties:
+            op: {enum: [move, copy]}
+        - required: [op, path]  # remove
+          properties:
+            op: {enum: [remove]}
+    CamaraConfigChangeEventBase:
+      description: |
+        CamaraConfigChangeEventBase
+      allOf:
+        - $ref: '#/components/schemas/SubscriptionId'
+        - type: object
+          properties:
+            camaraConfigBaseVersion:
+              type: string
+              description: Version/ETag this change applies to.
+            camaraConfigResultVersion:
+              type: string
+              description: Version/ETag after applying this change.
+            camaraSeq:
+              type: string
+              description: Monotonic sequence per subscription (provider-defined).
+    CamaraConfigChangeEventJsonPatch:
+      description: |
+        CamaraConfigChangeEventJsonPatch
+      allOf:
+        - $ref: '#/components/schemas/CamaraConfigChangeEventBase'
+        - type: object
+          properties:
+            datacontenttype:
+              type: string
+              enum: [application/json-patch+json]
+            data:
+              type: array
+              description: JSON Patch operations applied to the *Subscription* representation
+                (root at '/').
+              items:
+                $ref: '#/components/schemas/CamaraExtendedJsonPatchOperation'
+    CamaraConfigChangeEventMergePatch:
+      description: |
+        CamaraConfigChangeEventMergePatch
+      allOf:
+        - $ref: '#/components/schemas/CamaraConfigChangeEventBase'
+        - type: object
+          properties:
+            datacontenttype:
+              type: string
+              enum: [application/merge-patch+json]
+            data:
+              $ref: '#/components/schemas/CamaraExtendedSubscription'
+    CamaraConfigChangeEventSnapshot:
+      description: |
+        CamaraConfigChangeEventSnapshot
+      allOf:
+        - $ref: '#/components/schemas/CamaraConfigChangeEventBase'
+        - type: object
+          properties:
+            datacontenttype:
+              type: string
+              enum: [application/json]
+            data:
+              type: object
+              required: [previous, current]
+              properties:
+                previous: {$ref: '#/components/schemas/CamaraExtendedSubscription'}
+                current: {$ref: '#/components/schemas/CamaraExtendedSubscription'}
     SubscriptionDetail:
       type: object
       description: Base schema for all domain-specific subscriptionDetail definitions.
-
     CamaraExtendedCloudEventsAttribute:
       type: object
       description: |
@@ -529,28 +1057,25 @@ components:
         - specversion
         - type
         - time
-
         'datacontenttype': 'media-type that describes the event payload encoding, must be "application/json" for CAMARA APIs'
         'type' example: org.camaraproject.device-reachability-status-subscriptions.v0.reachability-data
       allOf:
-        - $ref: 'subscriptions-openapi.yaml#/components/schemas/CloudEventsAttribute'
+        - $ref: subscriptions-openapi.yaml#/components/schemas/CloudEventsAttribute
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/CamaraCloudEventData"
-          required:
-            - id
-            - source
-            - specversion
-            - type
-            - time
-            - data
+              $ref: '#/components/schemas/CamaraCloudEventData'
+            camaraConfigVersion:
+              type: string
+              description: Opaque version or hash of the effective subscription config
+      required: [id, source, specversion, type, time, data]
       discriminator:
-        propertyName: "type"
-
+        propertyName: type
     CamaraCloudEventData:
       type: object
-      description: Event details payload described in each CAMARA API and referenced by its type
+      description: Event details payload described in each CAMARA API and referenced
+        by its type
+      nullable: true
       additionalProperties: true  # allow any type
       properties:
         syncStatus:
@@ -562,58 +1087,107 @@ components:
             - EVENT_RESYNC_COMPLETED
           description: |
             Optional. If present, indicates the subscription's sync phase:
-            • `CACHE_RESYNCING`: current cache state restore in progress.
-            • `CACHE_RESYNC_COMPLETED`: current cache state restored.
-            • `EVENT_RESYNCING`: historical events replay in progress.
-            • `EVENT_RESYNC_COMPLETED`: historical events replay completed.
-
+            - `CACHE_RESYNCING`: current cache state restore in progress.
+            - `CACHE_RESYNC_COMPLETED`: current cache state restored.
+            - `EVENT_RESYNCING`: historical events replay in progress.
+            - `EVENT_RESYNC_COMPLETED`: historical events replay completed.
+        camaraMeta:
+          type: object
+          description: |
+            CAMARA-reserved metadata that augments domain payloads with scheduling,
+            batching, and reassembly hints. Vendors SHOULD place platform-level
+            metadata here to avoid collisions with domain fields.
+          additionalProperties: false
+          properties:
+            periodic:
+              type: object
+              description: Metadata for periodic/partitioned emissions.
+              additionalProperties: false
+              properties:
+                noChange:
+                  type: boolean
+                  description: |
+                    True if no relevant state changed during this tick. Indicates a heartbeat event.
+                  example: true
+                part:
+                  type: integer
+                  minimum: 1
+                  description: 1-based index of this part among multiple parts for
+                    the same tick.
+                  example: 1
+                partCount:
+                  type: integer
+                  minimum: 1
+                  description: Total number of parts emitted for this tick.
+                  example: 3
+                tickTime:
+                  type: string
+                  format: date-time
+                  description: |
+                    Scheduled tick timestamp (should match CloudEvent `time`), useful for reassembly and dedupe.
+                  example: '2025-10-29T13:00:00Z'
+    InitiationReason:
+      type: string
+      description: |
+        - SUBSCRIPTION_CREATED - Subscription created by API Server
+      enum: [SUBSCRIPTION_CREATED]
+    UpdateReason:
+      type: string
+      description: |
+        - SUBSCRIPTION_ACTIVE - API server transitioned susbcription status to `ACTIVE`
+        - SUBSCRIPTION_INACTIVE - API server transitioned susbcription status to `INACTIVE`
+      enum: [SUBSCRIPTION_ACTIVE, SUBSCRIPTION_INACTIVE]
     TerminationReason:
       type: string
       description: |
         - NETWORK_TERMINATED - API server stopped sending notification
+        - SUBSCRIPTION_UNPROCESSABLE - Subscription cannot be processed due to some reason, e.g. because the specified area cannot be managed. Useful for asynchronous subscription creation.
         - SUBSCRIPTION_EXPIRED - Subscription expire time (optionally set by the requester) has been reached
+        - SUBSCRIPTION_DELETED - Subscription was deleted by the requester
         - MAX_EVENTS_REACHED - Maximum number of events (optionally set by the requester) has been reached
         - ACCESS_TOKEN_EXPIRED - Access Token sinkCredential (optionally set by the requester) expiration time has been reached
-        - SUBSCRIPTION_DELETED - Subscription was deleted by the requester
       enum:
         - MAX_EVENTS_REACHED
         - NETWORK_TERMINATED
+        - SUBSCRIPTION_UNPROCESSABLE
         - SUBSCRIPTION_EXPIRED
-        - ACCESS_TOKEN_EXPIRED
         - SUBSCRIPTION_DELETED
-
+        - ACCESS_TOKEN_EXPIRED
   responses:
+    Generic304:
+      $ref: CAMARA_common.yaml#/components/responses/Generic304
     Generic400:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic400"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic400
     CreateSubscriptionBadRequest400:
       description: Problem with the client request.
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
+          $ref: '#/components/headers/x-correlator'
       content:
         application/json:
           schema:
             title: CreateSubscriptionBadRequest400
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 400
+                    enum: [400]
                   code:
                     enum:
                       - INVALID_ARGUMENT
                       - INVALID_CREDENTIAL
                       - INVALID_PROTOCOL
                       - INVALID_TOKEN
+                      - DENIED_CHANGE
+                      - DISALLOWED_CHANGE
           examples:
             GENERIC_400_INVALID_ARGUMENT:
               value:
                 status: 400
                 code: INVALID_ARGUMENT
-                message: Client specified an invalid argument, request body or query param.
+                message: Client specified an invalid argument, request body or query
+                  param.
             GENERIC_400_INVALID_PROTOCOL:
               value:
                 status: 400
@@ -629,116 +1203,122 @@ components:
                 status: 400
                 code: INVALID_TOKEN
                 message: Only bearer token is supported.
-
+            GENERIC_400_DENIED_CHANGE:
+              value:
+                status: 400
+                code: DENIED_CHANGE
+                message: Change request is allowed but denied at this moment.
+            GENERIC_400_DISALLOWED_CHANGE:
+              value:
+                status: 400
+                code: DISALLOWED_CHANGE
+                message: Change request is always not allowed.
     SubscriptionIdRequired400:
       description: Problem with the client request
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
+          $ref: '#/components/headers/x-correlator'
       content:
         application/json:
           schema:
             title: SubscriptionIdRequired400
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 400
+                    enum: [400]
                   code:
-                    enum:
-                      - INVALID_ARGUMENT
+                    enum: [INVALID_ARGUMENT]
           examples:
             GENERIC_400_INVALID_ARGUMENT:
               summary: Schema validation failed
               value:
                 status: 400
                 code: INVALID_ARGUMENT
-                message: Client specified an invalid argument, request body or query param.
+                message: Client specified an invalid argument, request body or query
+                  param.
             GENERIC_400_SUBSCRIPTION_ID_REQUIRED:
               summary: The subscription id is required
               value:
                 status: 400
                 code: INVALID_ARGUMENT
-                message: "Expected property is missing: subscriptionId"
-
+                message: 'Expected property is missing: subscriptionId'
     Generic401:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic401"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic401
     Generic403:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic403"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic403
     SubscriptionPermissionDenied403:
       description: Client does not have sufficient permission.
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
+          $ref: '#/components/headers/x-correlator'
       content:
         application/json:
           schema:
             title: SubscriptionPermissionDenied403
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 403
+                    enum: [403]
                   code:
-                    enum:
-                      - PERMISSION_DENIED
-                      - SUBSCRIPTION_MISMATCH
+                    enum: [PERMISSION_DENIED, SUBSCRIPTION_MISMATCH]
           examples:
             GENERIC_403_PERMISSION_DENIED:
               value:
                 status: 403
                 code: PERMISSION_DENIED
-                message: Client does not have sufficient permissions to perform this action.
+                message: Client does not have sufficient permissions to perform this
+                  action.
             GENERIC_403_TOKEN_MISMATCH:
               value:
                 status: 403
                 code: SUBSCRIPTION_MISMATCH
                 message: Inconsistent access token for requested events subscription.
-
     Generic404:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic404"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic404
     Generic409:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic409"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic409
     Generic410:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic410"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic410
+    Generic412:
+      $ref: CAMARA_common.yaml#/components/responses/Generic412
+    Generic415:
+      $ref: CAMARA_common.yaml#/components/responses/Generic415
     CreateSubscriptionUnprocessableEntity422:
       description: Unprocessable Entity
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
+          $ref: '#/components/headers/x-correlator'
       content:
         application/json:
           schema:
             title: CreateSubscriptionUnprocessableEntity422
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 422
+                    enum: [422]
                   code:
                     enum:
                       - IDENTIFIER_MISMATCH
                       - MISSING_IDENTIFIER
-                      - MULTIEVENT_SUBSCRIPTION_NOT_SUPPORTED
                       - SERVICE_NOT_APPLICABLE
                       - UNNECESSARY_IDENTIFIER
                       - UNSUPPORTED_IDENTIFIER
                       - GEOFENCING_SUBSCRIPTIONS.AREA_NOT_COVERED
                       - GEOFENCING_SUBSCRIPTIONS.INVALID_AREA
+                      - GROUP_SUBSCRIPTIONS.INVALID_GROUP
+                      - NOTIFICATION_POLICY_NOT_SUPPORTED
+                      - INVALID_NOTIFICATION_POLICY
+                      - SEMANTIC_RULE_VIOLATED
           examples:
             GENERIC_422_IDENTIFIER_MISMATCH:
-              description: Inconsistency between device identifiers not pointing to the same device.
+              description: Inconsistency between device identifiers not pointing to
+                the same device.
               value:
                 status: 422
                 code: IDENTIFIER_MISMATCH
@@ -750,18 +1330,16 @@ components:
                 code: SERVICE_NOT_APPLICABLE
                 message: The service is not available for the provided identifier.
             GENERIC_422_MISSING_IDENTIFIER:
-              description: An identifier is not included in the request and the device or phone number identification cannot be derived from the 3-legged access token
+              description: An identifier is not included in the request and the device
+                or phone number identification cannot be derived from the 3-legged
+                access token
               value:
                 status: 422
                 code: MISSING_IDENTIFIER
                 message: The device cannot be identified.
-            GENERIC_422_MULTIEVENT_SUBSCRIPTION_NOT_SUPPORTED:
-              value:
-                status: 422
-                code: MULTIEVENT_SUBSCRIPTION_NOT_SUPPORTED
-                message: Multi event types subscription not managed.
             GENERIC_422_UNNECESSARY_IDENTIFIER:
-              description: An explicit identifier is provided when a device or phone number has already been identified from the access token
+              description: An explicit identifier is provided when a device or phone
+                number has already been identified from the access token
               value:
                 status: 422
                 code: UNNECESSARY_IDENTIFIER
@@ -778,14 +1356,42 @@ components:
               value:
                 status: 422
                 code: GEOFENCING_SUBSCRIPTIONS.AREA_NOT_COVERED
-                message: "Unable to cover the requested area"
+                message: Unable to cover the requested area
             GEOFENCING_422_INVALID_AREA:
               summary: Invalid area
-              description: The requested area is too small to be supported by the system.
+              description: The requested area is too small to be supported by the
+                system.
               value:
                 status: 422
                 code: GEOFENCING_SUBSCRIPTIONS.INVALID_AREA
-                message: "The requested area is too small"
-
+                message: The requested area is too small
+            GROUP_422_INVALID_GROUP:
+              summary: Invalid group identifier
+              description: The requested group identifier is not valid.
+              value:
+                status: 422
+                code: GROUP_SUBSCRIPTIONS.INVALID_GROUP
+                message: The requested group identifier is not valid.
+            NOTIFICATION_POLICY_NOT_SUPPORTED:
+              summary: Notification policy is not supported
+              description: Notification policy is not supported
+              value:
+                status: 422
+                code: NOTIFICATION_POLICY_NOT_SUPPORTED
+                message: Notificatio policy is not supportedd.
+            INVALID_NOTIFICATION_POLICY:
+              summary: Notification policy configuration is invalid
+              description: Notification policy configuration is invalid
+              value:
+                status: 422
+                code: INVALID_NOTIFICATION_POLICY
+                message: Notification policy configuration is invalid.
+            SEMANTIC_RULE_VIOLATED:
+              summary: Semantic rule violated
+              description: Semantic rule violated (e.g., forbidden state transition)
+              value:
+                status: 422
+                code: SEMANTIC_RULE_VIOLATED
+                message: Semantic rule violated.
     Generic429:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic429"
+      $ref: CAMARA_common.yaml#/components/responses/Generic429

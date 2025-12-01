@@ -1,3 +1,4 @@
+---
 openapi: 3.0.3
 info:
   title: Event Notification using CloudEvents specifications
@@ -5,50 +6,41 @@ info:
     The event notification endpoint is used by the API server to notify the API consumer that an event occurred.  The notification is the message posted on listener side.
 
     # Introduction
-
     A lot of CAMARA APIs offer the capability to API consumer to receive events.
     Event data are defined in each API definition but in order to provide consistency across CAMARA APIs and to increase
     interoperability we will use [cloudevents](https://cloudevents.io/) specifications. In particular, every CAMARA Event will
     be defined using [cloudevents-json-format](https://github.com/cloudevents/spec/blob/main/cloudevents/formats/json-format.md)
 
     # Relevant terms and definitions
-
       * **Occurrence** : An "occurrence" is the capture of a statement of fact during the operation of a software system.
-
       * **Event**: An "event" is a data record expressing an occurrence and its context. Events are routed from an
     event producer (the source) to interested event consumers.
-
       * **Producer**: The "producer" is a specific instance, process or device that creates the data structure
     describing the CloudEvent.
-
       * **Source**:  The "source" is the context in which the occurrence happened. In a distributed system it might
     consist of multiple producers. If a source is not aware of CloudEvents, an external producer creates
     the CloudEvent on behalf of the source.
-
       * **Consumer**: A "consumer" receives the event and acts upon it. It uses the context and data to execute some
     logic, which might lead to the occurrence of new events.
-
       * **Data**:  Domain-specific information about the occurrence (i.e. the payload). This might
     include information about the occurrence, details about the data that was changed, or more.
 
     # API Functionality
-
     Only one endpoint/operation is provided: `POST /camara/cloudevents/webhook/v0`
     This endpoint describes the event notification received on subscription listener side when the event occurred.
     A detailed description of the event notification is provided in the [CAMARA API Event Subscription and Notification Guide](https://github.com/camaraproject/Commonalities/blob/main/documentation/CAMARA-API-Event-Subscription-and-Notification-Guide.md#3-event-notification)
-
   termsOfService: http://swagger.io/terms/
   contact:
     email: project-email@sample.com
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
-  version: wip
+  version: 0.4.0
 externalDocs:
   description: Product documentation at CAMARA
   url: https://github.com/camaraproject/Commonalities
 security:
-    - notificationsBearerAuth: []
+  - notificationsBearerAuth: []
 servers:
   - url: '{apiRoot}'
     variables:
@@ -62,9 +54,9 @@ tags:
 paths:
   /camara/cloudevents/webhook/v0:
     post:
-      tags:
-        - CAMARA Cloud Events
-      summary: "Cloud Event notification endpoint to notify consumer that statement of fact had occurred"
+      tags: [CAMARA Cloud Events]
+      summary: Cloud Event notification endpoint to notify consumer that statement
+        of fact had occurred
       description: |
         INFORMATIVE ENDPOINT: The value of this endpoint is freely declared by each client app by means of resource-based
         subscription or instance-based subscription. /camara/cloudevents/webhook/v0 is
@@ -73,7 +65,7 @@ paths:
         URL, i.e.: notifications won't be sent to /event-notification/vX/your_webhook_notification_url.
       operationId: sendCamaraCloudEvents
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
+        - $ref: '#/components/parameters/x-correlator'
       requestBody:
         required: true
         content:
@@ -81,54 +73,44 @@ paths:
             schema:
               type: array
               items:
-                $ref: "#/components/schemas/CloudEvent"
-
+                $ref: '#/components/schemas/CloudEvent'
       responses:
-        204:
+        '204':
           description: No Content
           headers:
             x-correlator:
-              $ref: "#/components/headers/x-correlator"
-        400:
-          $ref: "#/components/responses/Generic400"
-        401:
-          $ref: "#/components/responses/Generic401"
-        403:
-          $ref: "#/components/responses/Generic403"
-        410:
-          $ref: "#/components/responses/Generic410"
-        429:
-          $ref: "#/components/responses/Generic429"
+              $ref: '#/components/headers/x-correlator'
+        '400':
+          $ref: '#/components/responses/Generic400'
+        '401':
+          $ref: '#/components/responses/Generic401'
+        '403':
+          $ref: '#/components/responses/Generic403'
+        '410':
+          $ref: '#/components/responses/Generic410'
+        '429':
+          $ref: '#/components/responses/Generic429'
 components:
   securitySchemes:
     notificationsBearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: "{$request.body#/sinkCredential.credentialType}"
+      $ref: CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
   schemas:
     CloudEvent:
-      $ref: 'CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute'
-
+      $ref: CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute
   headers:
     x-correlator:
-      $ref: "CAMARA_common.yaml#/components/headers/x-correlator"
-
+      $ref: CAMARA_common.yaml#/components/headers/x-correlator
   parameters:
     x-correlator:
-      $ref: "CAMARA_common.yaml#/components/parameters/x-correlator"
-
+      $ref: CAMARA_common.yaml#/components/parameters/x-correlator
   responses:
     Generic400:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic400"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic400
     Generic401:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic401"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic401
     Generic403:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic403"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic403
     Generic410:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic410"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic410
     Generic429:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic429"
+      $ref: CAMARA_common.yaml#/components/responses/Generic429

@@ -1,3 +1,4 @@
+---
 openapi: 3.0.3
 info:
   title: CAMARA Service Capability API
@@ -47,9 +48,7 @@ info:
     # Usage
     The Camara Service Capability API enables clients to discover and manage CAMARA API capabilities
     through a simple, RESTful interface and receive automatic CloudEvents when state changes.
-
     ```mermaid
-
             Client            Webhook/Sink       Capability API        CloudEvents Broker
               |                     |                   |                        |
               |---------------------------------------->|                        |
@@ -69,13 +68,11 @@ info:
               |                     |------------------------------------------->|
               |                     |                  204                       |
               |                     |                   |                        |
-
         The Capability API responds with the supported capabilities and then internally
         registers for capability change events if 'subscriptionRequest' is provided in the request.
         As capabilities change event notifications are forwarded through a CloudEvents Broker to
         the client-provided Webhook (Sink).
     ```
-
     **How it works**
     1. **Query capabilities**
        Client sends one or more `CamaraCapabilityQuery` objects to `/camara/service/capability/v0`.
@@ -84,36 +81,27 @@ info:
     3. **Receive updates automatically**
        Whenever capability bitmaps or info change, the API emits a CloudEvent (via implicit subscription)
        to your configured webhook sink endpoint.
-
     **Supported CloudEvent types:**
     - `org.camaraproject.capability.v0.capability-bitmap-changed`
     - `org.camaraproject.capability.v0.capability-info-changed`
-
     For full schema definitions and examples, see the components section below.
 
     ### Summary:
-
     1. `POST /camara/service/capability/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
     2. CloudEvents Notifications: Signals restriction state changes (active/inactive) via bitmap change event and new restrictions via info change event, ensuring efficient synchronization.
     3. Versioning: Uses mappingVersion to handle changes in the restriction mapping, preventing synchronization errors.
 
     # Relevant terms and definitions
-
     * **Authentication**:
     Security access keys such as OAuth 2.0 client credentials used by client applications to invoke the Capability API.
-
     * **API (Application Programming Interface)**:
     A set of protocols and tools for building software and applications.
-
     * **Features**:
     Specific functions or capabilities of an API that can be *active* or *inactive*.
-
     * **Capabilities**:
     A collection of features and their status (*active* or *inactive*) at a specific point in time.
-
     * **Footprints**:
     Define the coverage area where specific capabilities are available.
-
     * **Runtime Restrictions**:
     Restrictions that affect optional or alternative structures, parameters, and other aspects of API usage using a collection of overlays.
     There are two kinds of overlays. The openAPI Overlays specification is at https://spec.openapis.org/overlay/latest.html.
@@ -123,70 +111,61 @@ info:
     The actions of any overlays are not known to the Client until they're communicated from the API provider at the runtime of the Client.
 
     # API functionality
-
     Please see examples within this yaml on what options the gateway may return in the response.
 
     # Further info and support
 
     ## Frequently Asked Questions (FAQs)
-
     1. What is the purpose of the API described in the text?
     The API enables feature discovery and near-real-time feature status notifications
     for APIs provided by the gateway.
-
     2. What are capabilities and how do they relate to API features?
     Capabilities represent a collection of features and their
     status (*active* or *inactive*) at a specific point in time. These capabilities provide a way to describe what an API can do.
-
     3. What are footprints and how do they affect the availability of capabilities?
     Footprints define the coverage area where specific
     capabilities are available. A device must be located within the footprint to access these capabilities. If no footprint is specified,
     the capabilities may be available to any device connected to the network.
-
     4. What is the role of footprint precedence in the search execution order?
     Footprint precedence specifies the search execution order of
     Footprints in the collection. The lower the numerical value of precedence, the higher the Footprint precedence. Footprints with equal
     precedence may be executed in parallel if supported by the system.
-
     5. How do runtime restrictions affect API usage?
     To convey the impact of capability status to API consumers in a meaningful way,
     capabilities are directly tied to a set of runtime restrictions. These restrictions affect optional or alternative structures,
     parameters, and other aspects of API usage using a collection of overlays.
-
     6. What if a Client does not support this API?
     They can send requests without using this API. The downside
     is that they may send requests that are invalid and could have been avoided with information from this API. They
     could be more proactive by disabling / hiding options that are not enabled in the Client which improves user
     experience.
-
     7. What if a Client does not support Footprints or a specific Footprint type?
     They should ignore enforcing the
     state of the specific capability. This may result in sending invalid requests.
-
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: wip
+  x-camara-commonalities: tbd
 externalDocs:
   description: Product documentation at Camara
   url: https://github.com/camaraproject/
 servers:
-  - url: "{apiRoot}"
+  - url: '{apiRoot}'
     variables:
       apiRoot:
         default: http://localhost:9091
         description: API root
 tags:
   - name: CAMARA Service Capability Query
-    description: Returns the Service Capability for specified CAMARA service APIs on the API gateway / producer side.
+    description: Returns the Service Capability for specified CAMARA service APIs
+      on the API gateway / producer side.
   - name: CAMARA Service Capability notifications callback
     description: Callback endpoint for receiving notifications on capability changes.
-
 paths:
   /camara/service/capability/v0:
     post:
-      tags:
-        - CAMARA Service Capability Query
+      tags: [CAMARA Service Capability Query]
       summary: Retrieve tailored service capabilities based on consumer context
       description: |
         Returns service capability information tailored to the consumer's context, including active/inactive restrictions and mapping metadata.
@@ -194,35 +173,33 @@ paths:
         capability identifiers, and a mapping version. It includes response with initial bitmaps which should be enforced on the API consumer side.
       operationId: postServiceCapability
       parameters:
-        - $ref: "#/components/parameters/x-correlator"
-        - $ref: "#/components/parameters/If-None-Match"
-        - $ref: "#/components/parameters/If-Modified-Since"
+        - $ref: '#/components/parameters/x-correlator'
+        - $ref: '#/components/parameters/If-None-Match'
+        - $ref: '#/components/parameters/If-Modified-Since'
       security:
-        - openId:
-            - camara-capability:read
+        - openId: [camara-capability:read]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CamaraCapabilityQueryRequest"
+              $ref: '#/components/schemas/CamaraCapabilityQueryRequest'
             examples:
               CAMARA_CAPABILITY_QUERY_REQUEST_EXAMPLE:
-                $ref: "#/components/examples/CAMARA_CAPABILITY_QUERY_REQUEST_EXAMPLE"
+                $ref: '#/components/examples/CAMARA_CAPABILITY_QUERY_REQUEST_EXAMPLE'
       callbacks:
         notifications:
-          "{$request.body#/subscriptionRequest/sink}":
+          '{$request.body#/subscriptionRequest/sink}':
             post:
-              tags:
-                - CAMARA Service Capability notifications callback
-              summary: "CAMARA Service Capability notifications callback"
+              tags: [CAMARA Service Capability notifications callback]
+              summary: CAMARA Service Capability notifications callback
               description: |
                 Important: this endpoint is to be implemented by the API consumer.
                 The API provider will call this endpoint whenever any CAMARA Service Capability change related event occurs.
                 Currently only EVENT_CAPABILITY_CHANGED and EVENT_CAPABILITY_REMOVED events are defined.
               operationId: postCapabilityNotification
               parameters:
-                - $ref: "#/components/parameters/x-correlator"
+                - $ref: '#/components/parameters/x-correlator'
               requestBody:
                 required: true
                 content:
@@ -230,30 +207,30 @@ paths:
                     schema:
                       type: array
                       items:
-                        $ref: "#/components/schemas/CloudEvent"
+                        $ref: '#/components/schemas/CloudEvent'
                     examples:
-                      EVENT_CAPABILITY_BITMAP_CHANGED_EXAMPLE:
-                        $ref: "#/components/examples/EVENT_CAPABILITY_BITMAP_CHANGED_EXAMPLE"
-                      EVENT_CAPABILITY_INFO_CHANGED_EXAMPLE:
-                        $ref: "#/components/examples/EVENT_CAPABILITY_INFO_CHANGED_EXAMPLE"
+                      EVENT_CAPABILITY_BITMAP_CHANGED_BATCH_EXAMPLE:
+                        $ref: '#/components/examples/EVENT_CAPABILITY_BITMAP_CHANGED_BATCH_EXAMPLE'
+                      EVENT_CAPABILITY_INFO_CHANGED_BATCH_EXAMPLE:
+                        $ref: '#/components/examples/EVENT_CAPABILITY_INFO_CHANGED_BATCH_EXAMPLE'
               responses:
-                "204":
+                '204':
                   description: Successful notification
                   headers:
                     x-correlator:
                       $ref: '#/components/headers/x-correlator'
-                "400":
-                  $ref: "#/components/responses/Generic400"
-                "401":
-                  $ref: "#/components/responses/Generic401"
-                "403":
-                  $ref: "#/components/responses/Generic403"
-                "410":
-                  $ref: "#/components/responses/Generic410"
+                '400':
+                  $ref: '#/components/responses/Generic400'
+                '401':
+                  $ref: '#/components/responses/Generic401'
+                '403':
+                  $ref: '#/components/responses/Generic403'
+                '410':
+                  $ref: '#/components/responses/Generic410'
               security:
                 - notificationsBearerAuth: []
       responses:
-        "201":
+        '201':
           description: Tailored Capability info with current restriction mapping
           headers:
             x-correlator:
@@ -267,50 +244,46 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CapabilityInfo"
+                $ref: '#/components/schemas/CapabilityInfo'
               examples:
                 CAMARA_CAPABILITY_QUERY_REQUEST_RESPONSE_EXAMPLE:
-                  $ref: "#/components/examples/CAMARA_CAPABILITY_QUERY_REQUEST_RESPONSE_EXAMPLE"
+                  $ref: '#/components/examples/CAMARA_CAPABILITY_QUERY_REQUEST_RESPONSE_EXAMPLE'
         '304':
-          $ref: "#/components/responses/CapabilityNotModified304"
-        "400":
-          $ref: "#/components/responses/CapabilityApiBadRequest400"
+          $ref: '#/components/responses/CapabilityNotModified304'
+        '400':
+          $ref: '#/components/responses/CapabilityApiBadRequest400'
         '401':
           $ref: '#/components/responses/Generic401'
         '403':
           $ref: '#/components/responses/Generic403'
-        "404":
-          $ref: "#/components/responses/CapabilityApiNotFound404"
+        '404':
+          $ref: '#/components/responses/CapabilityApiNotFound404'
         '500':
           $ref: '#/components/responses/Generic500'
         '503':
           $ref: '#/components/responses/Generic503'
-
 components:
   securitySchemes:
     openId:
-      $ref: 'CAMARA_common.yaml#/components/securitySchemes/openId'
+      $ref: CAMARA_common.yaml#/components/securitySchemes/openId
     notificationsBearerAuth:
-      $ref: 'CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth'
-
+      $ref: CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
   parameters:
     x-correlator:
-      $ref: 'CAMARA_common.yaml#/components/parameters/x-correlator'
+      $ref: CAMARA_common.yaml#/components/parameters/x-correlator
     If-None-Match:
-      $ref: 'CAMARA_common.yaml#/components/parameters/If-None-Match'
+      $ref: CAMARA_common.yaml#/components/parameters/If-None-Match
     If-Modified-Since:
-      $ref: 'CAMARA_common.yaml#/components/parameters/If-Modified-Since'
-
+      $ref: CAMARA_common.yaml#/components/parameters/If-Modified-Since
   headers:
     x-correlator:
-      $ref: 'CAMARA_common.yaml#/components/headers/x-correlator'
+      $ref: CAMARA_common.yaml#/components/headers/x-correlator
     Cache-Control:
-      $ref: 'CAMARA_common.yaml#/components/headers/Cache-Control'
+      $ref: CAMARA_common.yaml#/components/headers/Cache-Control
     ETag:
-      $ref: 'CAMARA_common.yaml#/components/headers/ETag'
+      $ref: CAMARA_common.yaml#/components/headers/ETag
     Last-Modified:
-      $ref: 'CAMARA_common.yaml#/components/headers/Last-Modified'
-
+      $ref: CAMARA_common.yaml#/components/headers/Last-Modified
   schemas:
     # General items used throughout the specification
     Contexts:
@@ -326,10 +299,9 @@ components:
           type: string
           description: HTTP method in upper-case.
         request:
-          $ref: "#/components/schemas/HttpMessage"
+          $ref: '#/components/schemas/HttpMessage'
       additionalProperties: true
       required: [url, method, request]
-
     HttpMessage:
       type: object
       description: Common structure for $request and, if supported, $response.
@@ -341,11 +313,10 @@ components:
             A map of HTTP header fields.
             **Header names (object keys)** SHOULD conform to the RFC-7230 `token` syntax:
             `^[!#$%&'*+\-\.^_`|~0-9A-Za-z]+$`
-
             Note: OpenAPI 3.0.3 cannot enforce key-name patterns natively.
           additionalProperties:
             type: string
-            pattern: "^[\\t\\x20-\\x7E\\x80-\\xFF]*$"
+            pattern: ^[\t\x20-\x7E\x80-\xFF]*$
             description: Value of the header field (matches `field-value` ABNF)
         query:
           type: object
@@ -358,47 +329,43 @@ components:
         body:
           description: Request or response payload. Its shape depends on Content-Type.
       additionalProperties: false
-
     VersionedName:
       description: |
         An abstract base object containing names with versioning
       type: object
       properties:
         name:
-          description: The item's name. Ideally, it is a unique value for its type. This value MUST NOT contain the semicolon - ';'
+          description: The item's name. Ideally, it is a unique value for its type.
+            This value MUST NOT contain the semicolon - ';'
           type: string
-          example:
-            "cap1"
+          example: cap1
           minLength: 3
           maxLength: 256
-          pattern: "^[^;]*$"
+          pattern: ^[^;]*$
         version:
-          description: The version of the object instance.
+          description: |
+            The semantic version of the object instance following [SemVer 2.0.0](https://semver.org/).
+            Examples:
+            - `1.0.0`
+            - `2.3.1-beta`
+            - `1.4.5+build.2025`
           type: string
-          example: "0.0.1"
+          example: 1.0.0
           minLength: 1
-          pattern: >-
-            ^(0|[1-9]\d*)\.
-            (0|[1-9]\d*)\.
-            (0|[1-9]\d*)
-            (?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)
-            (?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?
-            (?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$
+          pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$
         specifyingBody:
           description: Entity's specification organization (reversed fqdn format)
           type: string
           minLength: 1
       required: [name, version]
-
     Footprint:
       description: |
         The coverage area to which capabilities apply. They help define the context in which the features are relevant.
         There are many ways to describe a footprint -- for example, by address range (e.g., IPv4 CIDR or IPv6 CIDR (Classless Inter-Domain Routing),
         network ID (e.g., Autonomous System Number (ASN)), nation boundaries (e.g., country code) or GPS coordinates.
-
         When a **Footprint** value is not present, the capabilities apply to *any* connected device.
       allOf:
-        - $ref: "#/components/schemas/VersionedName"
+        - $ref: '#/components/schemas/VersionedName'
         - type: object
           properties:
             footprintType:
@@ -441,24 +408,27 @@ components:
                   - type: string
                   - type: object
             footprintUsage:
-              description: Indicates that the footprint value represents an Access Network, a non Access Network, i.e., networks facing the Internet, or both.
+              description: Indicates that the footprint value represents an Access
+                Network, a non Access Network, i.e., networks facing the Internet,
+                or both.
               type: string
-              enum:
-                - access
-                - non_access
-                - both
+              enum: [access, non_access, both]
             precedence:
               description: |
                 Specifies the search execution order of Footprints when they are part of a collection. The lower the numerical value of precedence,
                 the higher the rule precedence. Rules with equal precedence MAY be executed in parallel if supported.
               type: integer
               minimum: 0
-      required: [name, version, footprintType, footprintValue, footprintUsage, precedence]
-
+      required:
+        - name
+        - version
+        - footprintType
+        - footprintValue
+        - footprintUsage
+        - precedence
     Metadata:
       description: >
         Tighten validation, avoid client/server drift, and make structures robust.
-      additionalProperties: false   # disallow stray/typo properties
       type: object
       properties:
         description:
@@ -481,55 +451,54 @@ components:
         deprecatedAt:
           type: string
           format: date-time
-          description: RFC 3339 timestamp after which this entity is no longer be applicable.
+          description: RFC 3339 timestamp after which this entity is no longer be
+            applicable.
         mappingHash:
           type: string
-          pattern: '^[A-Fa-f0-9]{64}$'     # SHA-256 in hex
-          description: SHA-256 digest of the canonical JSON representation of this mapping.
-          example: '5d41402abc4b2a76b9719d911017c592cf0c58f2b3b65af6f88ab3a2b4d6996f'
+          pattern: ^[A-Fa-f0-9]{64}$  # SHA-256 in hex
+          description: SHA-256 digest of the canonical JSON representation of this
+            mapping.
+          example: 5d41402abc4b2a76b9719d911017c592cf0c58f2b3b65af6f88ab3a2b4d6996f
         traceID:
           type: string
           description: Trace Identifier used across multiple systems.
 
     # Overlay imports
     Overlay:
-      $ref: 'overlay-openapi.yaml#/components/schemas/Overlay'
+      $ref: overlay-openapi.yaml#/components/schemas/Overlay
     Action:
-      $ref: 'overlay-openapi.yaml#/components/schemas/Action-Object'
+      $ref: overlay-openapi.yaml#/components/schemas/Action-Object
     Extends:
-      $ref: 'overlay-openapi.yaml#/components/schemas/Extends'
+      $ref: overlay-openapi.yaml#/components/schemas/Extends
 
     # Camara extensions to Open API Overlay components
     CamaraOverlay:
       description: |
         Common attributes of a CAMARA Overlay.
         It extends OpenAPI Overlay Specification v1.0.0 for restriction-only schema patches.
-      additionalProperties: false
       allOf:
-        - $ref: "#/components/schemas/Overlay"
-        - $ref: "#/components/schemas/VersionedName"
-        - $ref: "#/components/schemas/Metadata"
+        - $ref: '#/components/schemas/Overlay'
+        - $ref: '#/components/schemas/VersionedName'
+        - $ref: '#/components/schemas/Metadata'
         - type: object
           properties:
             actions:
               description: A ordered list of actions
               type: array
               minItems: 1
-              maxItems: 20   #DoS - guard rail
+              maxItems: 20  # DoS - guard rail
               uniqueItems: true
               items:
-                $ref: "#/components/schemas/CamaraAction"
+                $ref: '#/components/schemas/CamaraAction'
             operator:
               description: |
                 Logical operator combining the results of all actions:
-
                 - **and**: all actions must succeed; processing stops on first failure
                 - **or**: failed actions are skipped
               type: string
               enum: [and, or]
               default: and
           required: [name, version, actions]
-
     CamaraAction:
       type: object
       description: |
@@ -538,25 +507,23 @@ components:
         b. letting the API provider pre-compute exactly which nodes will be
            affected, using either JSON Pointers or OpenAPI runtime expressions.
            This makes it possible to:
-
         1. **target** an OpenAPI document fragment (via JSONPath).
         2. **Resolve** that target against an instance of the Open API schema
             into one or more concrete locations—each expressed as either a JSON Pointer
             or an OpenAPI runtime expression.
         3. **Apply** the `update` or `remove` action deterministically to those
           resolved locations.
-
         By including `targetLocations`, clients can skip the extra step of evaluating
         `target` themselves against instances of the schema, ensuring precise,
         unambiguous application and enabling robust validation through attached `SchemaRestrictions`.
         When targetLocations is present, any target value MUST be ignored.
       allOf:
-        - $ref: "#/components/schemas/Action"
+        - $ref: '#/components/schemas/Action'
       properties:
         id:
           type: string
-          description: Identifier for this action. Used for tracability.
-            Each id MUST be unique within the overlay.
+          description: Identifier for this action. Used for tracability. Each id MUST
+            be unique within the overlay.
         targetLocations:
           description: |
             A non-empty list of explicit document locations—specified as a
@@ -568,17 +535,19 @@ components:
           minItems: 1
           maxItems: 30
           items:
-            $ref: "#/components/schemas/InstanceLocation"
-        # ── refinement of update - it can only take on
+            $ref: '#/components/schemas/InstanceLocation'
+        # refinement of update - it can only take on
         update:
+          description: update of schema restrictions
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/SchemaRestrictions"
+            $ref: '#/components/schemas/SchemaRestrictions'
         instanceUpdate:
           description: An update of an instance document's value.
           type: object
         instanceRemove:
-          description: A boolean indicating the result's value should be removed from the instance's document.
+          description: A boolean indicating the result's value should be removed from
+            the instance's document.
           type: boolean
         forceAction:
           type: boolean
@@ -589,79 +558,63 @@ components:
             MUST also be present.
           default: true
           example: true
-      # ── validation logic ──────────────────────────────────────────────────
+      # validation logic
       anyOf:  # target or targetLocations MUST be present
-      - required: [target]
-      - required: [targetLocations]
-      not:    # instanceUpdate and instanceRemove MUST NOT be present at the same time
+        - required: [target]
+        - required: [targetLocations]
+      not:  # instanceUpdate and instanceRemove MUST NOT be present at the same time
         required: [instanceUpdate, instanceRemove]
       # When forceAction is present, instanceUpdate or instanceRemove MUST be present
       oneOf:
         # Case A: forceAction is *not* present (nothing else enforced)
         - not:
-            required: [ forceAction ]
+            required: [forceAction]
         # Case B: forceAction *is* present, and exactly one payload must accompany it
         - allOf:
-            - required: [ forceAction ]
+            - required: [forceAction]
             - oneOf:
-                - required: [ instanceUpdate ]
-                - required: [ instanceRemove ]
-
+                - required: [instanceUpdate]
+                - required: [instanceRemove]
     InstanceLocation:
       description: |
         A location in the JSON document that is an instance of an OpenAPI Schema.
-
         It provides an optional endpoint to restrict it as well as the location.
-
         All strings follow a Open API Runtime Expression or JSON Pointer (RFC 6901) format.
       type: object
       properties:
         endpoint:
-          description: Optional endpoint path of a URI that MUST be present in the request/response.
+          description: Optional endpoint path of a URI that MUST be present in the
+            request/response.
           allOf:
-          - $ref: "#/components/schemas/InstanceLocationSyntax"
+            - $ref: '#/components/schemas/InstanceLocationSyntax'
         location:
           description: The location of the target result.
           allOf:
-          - $ref: "#/components/schemas/InstanceLocationSyntax"
+            - $ref: '#/components/schemas/InstanceLocationSyntax'
       additionalProperties: false
       required: [location]
-
     InstanceLocationSyntax:
       description: A string whose format is Open API Runtime Expression or JSON Path.
       type: string
       minLength: 1
       oneOf:
         - x-camara-targetSyntax: runtimeexpression  # runtime expression
-          pattern: >
-            ^\$(?:url|method|statusCode
-              |request\.(?:header\.[!#$%&'*+\-\.\^_`|~0-9A-Za-z]+
-                            |query\.[^\s\/]+
-                            |path\.[^\s\/]+
-                            |body(?:#\/(?:[^\/~]|~0|~1)+(?:\/(?:[^\/~]|~0|~1)+)*)?)
-              |response\.(?:header\.[!#$%&'*+\-\.\^_`|~0-9A-Za-z]+
-                              |body(?:#\/(?:[^\/~]|~0|~1)+(?:\/(?:[^\/~]|~0|~1)+)*)?))
+          pattern: ^\$(?:url|method|statusCode|request\.(?:header\.[!#$%&'*+\-\.\^_`|~0-9A-Za-z]+|query\.[^\s\/]+|path\.[^\s\/]+|body(?:#\/(?:[^\/~]|~0|~1)+(?:\/(?:[^\/~]|~0|~1)+)*)?)|response\.(?:header\.[!#$%&'*+\-\.\^_`|~0-9A-Za-z]+|body(?:#\/(?:[^\/~]|~0|~1)+(?:\/(?:[^\/~]|~0|~1)+)*)?))
           minLength: 1
-        - x-camara-targetSyntax: jsonPointer # JSON Pointer
-          pattern: "^(/([^/~]|~[01])*)*$"
+        - x-camara-targetSyntax: jsonPointer  # JSON Pointer
+          pattern: ^(/([^/~]|~[01])*)*$
           minLength: 1
-
     SchemaRestrictions:
       description: |
         A set of schema constraints evaluated against a single target.
-
         - **restrictions** - An array (min = 1) of `SchemaRestriction` objects.
           Each restriction returns a Boolean result when applied to the target.
-
         - **operator** - Optional logical operator that combines the restriction
           results. Supported values are: **and** (default), **or**, **not**.
           When a single restrictions is supplied, **not** negates that result.
-
         If `operator` is omitted, **and** is assumed.
-
         If only one restriction is present, `operator: not` will negate it. Values of `operator: and` and
         `operator: or` are ignored.
-
         If `operator` is present, `restrictions` **MUST** also be present.
       type: object
       properties:
@@ -671,11 +624,10 @@ components:
           minItems: 1
           uniqueItems: true
           items:
-            $ref: "#/components/schemas/SchemaRestriction"
+            $ref: '#/components/schemas/SchemaRestriction'
         operator:
           description: |
             Logical operator that combines the results of all restrictions.
-
             - **and** - All restrictions MUST be true.
             - **or** - At least one restriction MUST be true.
             - **not** - No restriction MAY be true.  For a single restriction this simply negates the result.
@@ -683,138 +635,126 @@ components:
           enum: [and, or, not]
           default: and
       required: [restrictions]
-
     SchemaRestriction:
       description: |
         Single schema update that refines and restricts the target.
         This update **MUST** be compatible with the referenced target.
       type: object
-      additionalProperties: false
-      oneOf:
-        - $ref: "#/components/schemas/SchemaRestrictionMeta"
-        - $ref: "#/components/schemas/SchemaRestrictionAnyInstance"
-        - $ref: "#/components/schemas/SchemaRestrictionNumeric"
-        - $ref: "#/components/schemas/SchemaRestrictionString"
-        - $ref: "#/components/schemas/SchemaRestrictionArray"
-        - $ref: "#/components/schemas/SchemaRestrictionObject"
-        - $ref: "#/components/schemas/SchemaRestrictionParameter"
-        - $ref: "#/components/schemas/SchemaRestrictionOperation"
-        - $ref: "#/components/schemas/SchemaRestrictionPresence"
-
+      anyOf:
+        - $ref: '#/components/schemas/SchemaRestrictionMeta'
+        - $ref: '#/components/schemas/SchemaRestrictionAnyInstance'
+        - $ref: '#/components/schemas/SchemaRestrictionNumeric'
+        - $ref: '#/components/schemas/SchemaRestrictionString'
+        - $ref: '#/components/schemas/SchemaRestrictionArray'
+        - $ref: '#/components/schemas/SchemaRestrictionObject'
+        - $ref: '#/components/schemas/SchemaRestrictionParameter'
+        - $ref: '#/components/schemas/SchemaRestrictionOperation'
+        - $ref: '#/components/schemas/SchemaRestrictionPresence'
     SchemaRestrictionMeta:
       type: object
       description: >
         Restriction applicable to any target at runtime.
-
-        Based upon the JSON Schema
-        [A Vocabulary for Basic Meta-Data Annotations](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-a-vocabulary-for-basic-meta).
+        Based upon the JSON Schema   [A Vocabulary for Basic Meta-Data Annotations](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-a-vocabulary-for-basic-meta).
       additionalProperties: false
       properties:
-        deprecated:  { type: boolean, description: "Mark as deprecated." }
-        readOnly:    { type: boolean, description: "Mark as read-only." }
-        writeOnly:   { type: boolean, description: "Mark as write-only." }
-        default:     { type: string,  description: "Default value to apply." }
-
+        deprecated: {type: boolean, description: Mark as deprecated.}
+        readOnly: {type: boolean, description: Mark as read-only.}
+        writeOnly: {type: boolean, description: Mark as write-only.}
+        default: {type: string, description: Default value to apply.}
     SchemaRestrictionAnyInstance:
       type: object
       description: >
         Restriction applicable to any target at runtime.
-
-        Based upon the JSON Schema
-        [Validation keywords for Any instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-any).
+        Based upon the JSON Schema   [Validation keywords for Any instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-any).
           additionalProperties: false
       properties:
         type:
           type: string
-          enum: [null, boolean, object, array, number, string, integer]
+          enum: [boolean, object, array, number, string, integer]
+          nullable: true
           description: >
             Restrict the type of the value. Only applicable when the type was
             not initially specified or matches the target's current type.
         enum:
           type: array
-          items: { type: string }
-          description: "Restrict allowed values (must be a subset of the original enum)."
+          items: {type: string}
+          description: Restrict allowed values (must be a subset of the original enum).
         const:
           type: string
-          description: "Force the field to have a constant value."
-
+          description: Force the field to have a constant value.
     SchemaRestrictionNumeric:
       type: object
       description: >
         Restriction applicable to numeric ranges (for example min/max values).
-
-        Based upon the JSON Schema
-        [Validation keywords for Numeric Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-num).
+        Based upon the JSON Schema   [Validation keywords for Numeric Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-num).
       additionalProperties: false
       properties:
-        multipleOf:       { type: number, minimum: 1, description: "Value MUST be a multiple of this number." }
-        maximum:          { type: number, description: "Value MUST be less than or equal to this number." }
-        minimum:          { type: number, description: "Value MUST be greater than or equal to this number." }
-        exclusiveMaximum: { type: number, description: "Value MUST be strictly less than this number." }
-        exclusiveMinimum: { type: number, description: "Value MUST be strictly greater than this number." }
-
+        multipleOf: {type: number, minimum: 1, description: Value MUST be a multiple
+            of this number.}
+        maximum: {type: number, description: Value MUST be less than or equal to this
+            number.}
+        minimum: {type: number, description: Value MUST be greater than or equal to
+            this number.}
+        exclusiveMaximum: {type: number, description: Value MUST be strictly less
+            than this number.}
+        exclusiveMinimum: {type: number, description: Value MUST be strictly greater
+            than this number.}
     SchemaRestrictionString:
       type: object
       description: >
         Restriction applicable to string fields (length or pattern).
-
-        Based upon the JSON Schema
-        [Validation keywords for Strings](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-str).
+        Based upon the JSON Schema   [Validation keywords for Strings](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-str).
       additionalProperties: false
       properties:
-        maxLength: { type: integer, minimum: 0, description: "Maximum string length." }
-        minLength: { type: integer, minimum: 0, description: "Minimum string length." }
-        pattern:   { type: string, description: "Regular-expression pattern the string MUST match." }
-
+        maxLength: {type: integer, minimum: 0, description: Maximum string length.}
+        minLength: {type: integer, minimum: 0, description: Minimum string length.}
+        pattern: {type: string, description: Regular-expression pattern the string
+            MUST match.}
     SchemaRestrictionArray:
       type: object
       description: >
         Restriction applicable to arrays (size or uniqueness).
-
-        Based upon the JSON Schema
-        [Validation keywords for Array Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-arr).
+        Based upon the JSON Schema   [Validation keywords for Array Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-arr).
       additionalProperties: false
       properties:
-        maxItems:    { type: integer, minimum: 0, description: "Maximum number of items." }
-        minItems:    { type: integer, minimum: 0, description: "Minimum number of items." }
-        uniqueItems: { type: boolean, description: "If **true**, all items MUST be unique." }
-        maxContains: { type: integer, minimum: 0, description: "Maximum count for items that match the `contains` schema." }
-        minContains: { type: integer, minimum: 0, description: "Minimum count for items that match the `contains` schema." }
-
+        maxItems: {type: integer, minimum: 0, description: Maximum number of items.}
+        minItems: {type: integer, minimum: 0, description: Minimum number of items.}
+        uniqueItems: {type: boolean, description: 'If **true**, all items MUST be
+            unique.'}
+        maxContains: {type: integer, minimum: 0, description: Maximum count for items
+            that match the `contains` schema.}
+        minContains: {type: integer, minimum: 0, description: Minimum count for items
+            that match the `contains` schema.}
     SchemaRestrictionObject:
       type: object
       description: >
         Restriction applicable to object structures.
-
-        Based upon the JSON Schema
-        [Validation keywords for Object Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-obj).
+        Based upon the JSON Schema   [Validation keywords for Object Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-obj).
       additionalProperties: false
       properties:
-        maxProperties: { type: integer, minimum: 0, description: "Maximum number of object properties." }
-        minProperties: { type: integer, minimum: 0, description: "Minimum number of object properties." }
+        maxProperties: {type: integer, minimum: 0, description: Maximum number of
+            object properties.}
+        minProperties: {type: integer, minimum: 0, description: Minimum number of
+            object properties.}
         required:
           type: array
-          items: { type: string }
-          description: "List of required properties (MUST already exist in the schema)."
+          items: {type: string}
+          description: List of required properties (MUST already exist in the schema).
         dependentRequired:
           type: array
-          items: { type: string }
-          description: "[`dependentRequired`](https://json-schema.org/draft/2020-12/json-schema-validation#name-validation-keywords-for-obj)"
+          items: {type: string}
+          description: '[`dependentRequired`](https://json-schema.org/draft/2020-12/json-schema-validation#name-validation-keywords-for-obj)'
         excludedProperties:
           type: array
-          items: { type: string }
-          description: "Properties that MUST be absent."
-
+          items: {type: string}
+          description: Properties that MUST be absent.
     SchemaRestrictionParameter:
       type: object
       description: >
         Restriction that applies only to HTTP request parameters (e.g. query
         parameters).
-
         Based upon the OpenAPI *Parameter Object* and provides:
-
-        - Mandating the use of an optional parameter
-        - Allowing empty values
+        - Mandating the use of an optional parameter   - Allowing empty values
       additionalProperties: false
       properties:
         allowEmptyValue:
@@ -826,94 +766,88 @@ components:
           type: boolean
           description: >
             Mandates the use of an otherwise-optional parameter. Allowed only
-            when:
-            1. The original schema does **not** declare `deprecated: true`, and
-            2. The original schema does **not** set `mandatory` to the opposite value.
-
+            when:   1. The original schema does **not** declare `deprecated: true`,
+            and   2. The original schema does **not** set `mandatory` to the opposite
+            value.
     SchemaRestrictionOperation:
       type: object
       description: >
         Restriction that applies to an absolute or relative path (operation).
-
         Based upon the OpenAPI *Operation Object* and provides:
-
-        - `notImplemented`
-        - `notAvailable`
+        - `notImplemented`   - `notAvailable`
       additionalProperties: false
       properties:
         notImplemented:
           type: boolean
-          description: "Marks the operation as unimplemented. Invocation MUST return **501 Not Implemented**."
+          description: Marks the operation as unimplemented. Invocation MUST return
+            **501 Not Implemented**.
         notAvailable:
           type: boolean
-          description: "Marks the operation as temporarily unavailable. Invocation MUST return **503 Service Unavailable**."
-
+          description: Marks the operation as temporarily unavailable. Invocation
+            MUST return **503 Service Unavailable**.
     SchemaRestrictionPresence:
       type: object
       description: >
         Restriction that applies to runtime presence of the target.
-      additionalProperties: false
       properties:
         presence:
           type: boolean
           description: >
             When **true**, at least one instance matching the target JSON Pointer
-            or JSON Path **MUST** be present.
-            When **false**, no such instance **MAY** be present.
-
+            or JSON Path **MUST** be present.   When **false**, no such instance **MAY**
+            be present.
     SchemaRestrictionsSet:
       description: Base restriction type
       type: object
-      additionalProperties: false         # disallow stray/typo properties
       allOf:
-        - $ref: "#/components/schemas/VersionedName"
+        - $ref: '#/components/schemas/VersionedName'
       properties:
         restrictions:
+          description: restrictions
           type: array
           uniqueItems: true
           minItems: 1
           maxItems: 10
           items:
-            $ref: "#/components/schemas/CamaraOverlay"
+            $ref: '#/components/schemas/CamaraOverlay'
         footprints:
+          description: footprints
           type: array
           uniqueItems: true
           minItems: 1
           maxItems: 10
           items:
-            $ref: "#/components/schemas/Footprint"
+            $ref: '#/components/schemas/Footprint'
         resourceServers:
+          description: resourceServers
           type: array
-          uniqueItems: true           # no duplicates
+          uniqueItems: true  # no duplicates
           maxItems: 10
           items:
             type: string
-            format: uri               # ensures each locator is a valid URI
+            format: uri  # ensures each locator is a valid URI
       required: [restrictions]
 
     # Camara capability structures
     CapabilityBitmap:
       description: Common attributes of CAMARA capability bitmap
       type: object
-      additionalProperties: false
       allOf:
-        - $ref: "#/components/schemas/CamaraCapabilityQuery"
+        - $ref: '#/components/schemas/CamaraCapabilityQuery'
       properties:
         mappingVersion:
           type: string
-          description: Version of the capability to restriction mapping, used to detect changes.
-          example: "1.0.0"
+          description: Version of the capability to restriction mapping, used to detect
+            changes.
+          example: 1.0.0
         camaraCapabilitiesBitmap:
           description: |
             Bitmap value of the capabilities to show current state (active or inactive) of the RestrictionSet.
-
             Decimal representation of a binary bitmask indicating active capabilities.
             This integer should be interpreted as a binary string (bitfield), where:
-
             - The **least significant bit (rightmost bit)** corresponds to key **"0"** in the `bitmapCapabilities` object.
             - The next bit to the left corresponds to key **"1"**, and so on.
             - Bit at position `n` (counting from right, 0-based) maps to key `"n"`.
-
             For example:
             - If `CapabilityBitmap` = `13`, the binary form is `1101`.
             - Interpreted as:
@@ -922,7 +856,6 @@ components:
                 - Bit 2 → "2" → active
                 - Bit 3 (MSB) → "3" → active
             - This means `bitmapCapabilities["0"]`, `["2"]`, and `["3"]` apply.
-
             Implementors of API provider should preserve this bit order when interpreting or generating the bitmask, so that capability indices remain consistent over time.
           type: integer
           minimum: 0
@@ -930,77 +863,69 @@ components:
           maximum: 18446744073709551615
           example: 6
       required: [mappingVersion, camaraCapabilitiesBitmap]
-
     CapabilityInfo:
       description: A list of CapabilityDetail.
       type: object
-      additionalProperties: false
       properties:
         details:
           description: a list of CapabilityDetail.
           type: array
           minItems: 1
-          maxItems: 1000    #DoS guard rail
+          maxItems: 1000  # DoS guard rail
           uniqueItems: true
           items:
-            $ref: "#/components/schemas/CapabilityDetail"
-
+            $ref: '#/components/schemas/CapabilityDetail'
     CapabilityDetail:
       description: |
         A self-contained snapshot of what each capability means (CapabilityBitmap) and its current active/inactive state.
         When these are CapabilitySetFootprint the state is always active.
-
         When it is CapabilitySetBitmap, then CapabilityBitmap is included that conveys the active/inactive state of each
         bit position.
       type: object
-      additionalProperties: false
-      oneOf:
-        - $ref: "#/components/schemas/CapabilitySetFootprint"
+      anyOf:
+        - $ref: '#/components/schemas/CapabilitySetFootprint'
         - allOf:
-          - $ref: "#/components/schemas/CapabilitySetBitmap"
-          - $ref: "#/components/schemas/CapabilityBitmap"
+            - $ref: '#/components/schemas/CapabilitySetBitmap'
+            - $ref: '#/components/schemas/CapabilityBitmap'
       minProperties: 1
-
     CapabilitySetFootprint:
       description: |
         Associates a capability with one or more RestrictionSets that
         defined by footprint constraints.
       type: object
-      additionalProperties: false          # reject typos / undocumented fields
+      additionalProperties: false  # reject typos / undocumented fields
       allOf:
-        - $ref: "#/components/schemas/VersionedName"
-        - $ref: "#/components/schemas/Metadata"
+        - $ref: '#/components/schemas/VersionedName'
+        - $ref: '#/components/schemas/Metadata'
       properties:
         footprints:
-          description: An array of restrictions that apply when the endpoint is present in one of
-            the entry's footprints.
+          description: An array of restrictions that apply when the endpoint is present
+            in one of the entry's footprints.
           type: array
           minItems: 1
           maxItems: 64
           uniqueItems: true
           items:
             allOf:
-              - $ref: "#/components/schemas/SchemaRestrictionsSet"
+              - $ref: '#/components/schemas/SchemaRestrictionsSet'
               - required: [footprints]
       required: [footprints]
-
     CapabilitySetBitmap:
       description: |
         Associates a capability with one or more RestrictionSets
         define through a bitmap position.
       type: object
-      additionalProperties: false          # reject typos / undocumented fields
       allOf:
-        - $ref: "#/components/schemas/VersionedName"
-        - $ref: "#/components/schemas/Metadata"
+        - $ref: '#/components/schemas/VersionedName'
+        - $ref: '#/components/schemas/Metadata'
       properties:
         bitmapCapabilities:
           type: object
           description: >
-            Map of bitPosition → SchemaRestrictionsSet.
-            Keys are stringified bitPosition indices (duplicates impossible).
-            **Header names (object keys)** SHOULD consist of one or more digits, matching `^[0-9]+$`.
-            (Note: OpenAPI 3.0.3 cannot enforce key-name patterns natively.)
+            Map of bitPosition → SchemaRestrictionsSet.   Keys are stringified bitPosition
+            indices (duplicates impossible).   **Header names (object keys)** SHOULD
+            consist of one or more digits, matching `^[0-9]+$`.   (Note: OpenAPI 3.0.3
+            cannot enforce key-name patterns natively.)
           additionalProperties:
             $ref: '#/components/schemas/SchemaRestrictionsSet'
       required: [bitmapCapabilities]
@@ -1015,136 +940,117 @@ components:
           description: A list of CamaraCapabilityQuery
           type: array
           minItems: 1
-          maxItems: 100    #DoS guard rail
+          maxItems: 100  # DoS guard rail
           uniqueItems: true
           items:
-            $ref: "#/components/schemas/CamaraCapabilityQuery"
+            $ref: '#/components/schemas/CamaraCapabilityQuery'
         subscriptionRequest:
-          $ref: "#/components/schemas/CamaraExtendedSubscriptionRequest"
+          $ref: '#/components/schemas/CamaraExtendedSubscriptionRequest'
       required: [queries]
-
     CamaraCapabilityQuery:
       description: Common attributes of CAMARA capability query
       type: object
-      additionalProperties: false
       properties:
-        device:
-          $ref: "#/components/schemas/Device"
+        resourceScopes:
+          $ref: '#/components/schemas/ResourceScopes'
         overlayExtends:
           description: list of unique overlay extends in the query
           type: array
           minItems: 1
-          maxItems: 20    #DoS guard rail
+          maxItems: 20  # DoS guard rail
           uniqueItems: true
           items:
-            $ref: "#/components/schemas/Extends"
+            $ref: '#/components/schemas/Extends'
       required: [overlayExtends]
-
-    Device:
-      $ref: "CAMARA_common.yaml#/components/schemas/Device"
-
+    ResourceScopes:
+      $ref: CAMARA_common.yaml#/components/schemas/ResourceScopes
     ErrorInfo:
-      $ref: 'CAMARA_common.yaml#/components/schemas/ErrorInfo'
+      $ref: CAMARA_common.yaml#/components/schemas/ErrorInfo
 
     # Event structures
     CamaraExtendedSubscriptionRequest:
-      $ref: 'CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedSubscriptionRequest'
-
+      $ref: CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedSubscriptionRequest
     org.camaraproject.capability.v0.detail:
       description: The detail of the requested capability event subscription.
       type: object
       allOf:
-        - $ref: 'CAMARA-subscriptions-openapi.yaml#/components/schemas/SubscriptionDetail'
+        - $ref: CAMARA-subscriptions-openapi.yaml#/components/schemas/SubscriptionDetail
         - type: object
           properties:
-            device:
-              $ref: "#/components/schemas/Device"
+            resourceScopes:
+              $ref: '#/components/schemas/ResourceScopes'
           additionalProperties: false
-
     CloudEvent:
-      $ref: 'CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute'
-
+      $ref: CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute
     CloudEventData:
-      $ref: 'CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraCloudEventData'
-
+      $ref: CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraCloudEventData
     org.camaraproject.capability.v0.capability-bitmap-changed:
       description: Event structure for capability bitmap changed
       allOf:
-        - $ref: "#/components/schemas/CloudEvent"
+        - $ref: '#/components/schemas/CloudEvent'
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/org.camaraproject.capability.v0.capability-bitmap-changed.data"
-          required:
-            - data
+              $ref: '#/components/schemas/org.camaraproject.capability.v0.capability-bitmap-changed.data'
+          required: [data]
           additionalProperties: false
       example:
-        $ref: "#/components/examples/EVENT_CAPABILITY_BITMAP_CHANGED_EXAMPLE/value"
-
+        $ref: '#/components/examples/EVENT_CAPABILITY_BITMAP_CHANGED_EXAMPLE/value'
     org.camaraproject.capability.v0.capability-bitmap-changed.data:
       description: Event for capability bitmap changed
       allOf:
-        - $ref: "#/components/schemas/CloudEventData"
+        - $ref: '#/components/schemas/CloudEventData'
         - type: object
           properties:
             capabilityBitmap:
-              $ref: "#/components/schemas/CapabilityBitmap"
-          required:
-            - capabilityBitmap
+              $ref: '#/components/schemas/CapabilityBitmap'
+          required: [capabilityBitmap]
           additionalProperties: false
-
     org.camaraproject.capability.v0.capability-info-changed:
       description: Event structure for capability info changed
       allOf:
-        - $ref: "#/components/schemas/CloudEvent"
+        - $ref: '#/components/schemas/CloudEvent'
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/org.camaraproject.capability.v0.capability-info-changed.data"
-          required:
-            - data
+              $ref: '#/components/schemas/org.camaraproject.capability.v0.capability-info-changed.data'
+          required: [data]
           additionalProperties: false
       example:
-        $ref: "#/components/examples/EVENT_CAPABILITY_INFO_CHANGED_EXAMPLE/value"
-
+        $ref: '#/components/examples/EVENT_CAPABILITY_INFO_CHANGED_EXAMPLE/value'
     org.camaraproject.capability.v0.capability-info-changed.data:
       description: Event for capability info changed
       allOf:
-        - $ref: "#/components/schemas/CloudEventData"
+        - $ref: '#/components/schemas/CloudEventData'
         - type: object
           properties:
             capabilityInfo:
-              $ref: "#/components/schemas/CapabilityInfo"
-          required:
-            - capabilityInfo
+              $ref: '#/components/schemas/CapabilityInfo'
+          required: [capabilityInfo]
           additionalProperties: false
-
   responses:
     CapabilityNotModified304:
       description: Not Modified (cached response)
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
-
+          $ref: '#/components/headers/x-correlator'
     Generic400:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic400"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic400
     CapabilityApiBadRequest400:
       description: Bad Request when query capability
       headers:
         x-correlator:
-          $ref: "#/components/headers/x-correlator"
+          $ref: '#/components/headers/x-correlator'
       content:
         application/json:
           schema:
             title: CapabilityApiBadRequest400
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 400
+                    enum: [400]
                   code:
                     enum:
                       - INVALID_ARGUMENT
@@ -1157,9 +1063,12 @@ components:
               value:
                 status: 400
                 code: INVALID_ARGUMENT
-                message: Client specified an invalid argument, request body or query param.
+                message: Client specified an invalid argument, request body or query
+                  param.
             GENERIC_400_OUT_OF_RANGE:
-              description: Out of Range. Specific Syntax Exception used when a given field has a pre-defined range or a invalid filter criteria combination is requested
+              description: Out of Range. Specific Syntax Exception used when a given
+                field has a pre-defined range or a invalid filter criteria combination
+                is requested
               value:
                 status: 400
                 code: OUT_OF_RANGE
@@ -1174,16 +1083,12 @@ components:
                 status: 400
                 code: INVALID_TOKEN
                 message: Only bearer token is supported
-
     Generic401:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic401"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic401
     Generic403:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic403"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic403
     Generic404:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic404"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic404
     CapabilityApiNotFound404:
       description: Capability API not found
       content:
@@ -1191,228 +1096,278 @@ components:
           schema:
             title: CapabilityApiNotFound404
             allOf:
-              - $ref: "#/components/schemas/ErrorInfo"
+              - $ref: '#/components/schemas/ErrorInfo'
               - type: object
                 properties:
                   status:
-                    enum:
-                      - 404
+                    enum: [404]
                   code:
-                    enum:
-                      - NOT_FOUND
+                    enum: [NOT_FOUND]
           example:
             status: 404
             code: NOT_FOUND
-            message: "No Capability API found"
-
+            message: No Capability API found
     Generic409:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic409"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic409
     Generic410:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic410"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic410
     Generic429:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic429"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic429
     Generic500:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic500"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic500
     Generic503:
-      $ref: "CAMARA_common.yaml#/components/responses/Generic503"
-
+      $ref: CAMARA_common.yaml#/components/responses/Generic503
   examples:
     CAMARA_CAPABILITY_QUERY_REQUEST_EXAMPLE:
       summary: Example of capability query
       description: query capability request
       value:
         queries:
-          - device:
-              phoneNumber: "+123456788"
+          - resourceScopes:
+              - phoneNumber: '+123456788'
             overlayExtends:
-              - "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
-              - "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml"
+              - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
+              - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
             subscriptionRequest:
-              sink: "https://application-server.com/notifications"
-              protocol: "HTTP"
+              sink: https://application-server.com/notifications
+              protocol: HTTP
               types:
-                - "org.camaraproject.capability.v0.capability-info-changed"
-                - "org.camaraproject.capability.v0.capability-bitmap-changed"
+                - org.camaraproject.capability.v0.capability-info-changed
+                - org.camaraproject.capability.v0.capability-bitmap-changed
               config:
                 subscriptionDetail:
-                  device:
-                    phoneNumber: "+123456788"
-
+                  resourceScopes:
+                    - phoneNumber: '+123456788'
     CAMARA_CAPABILITY_QUERY_REQUEST_RESPONSE_EXAMPLE:
       summary: Example of capability query response
       description: query capability response
       value:
         details:
           - name: cap-qod-adi
-            version: "0.0.1"
-            createdAt: "2025-05-09T14:25:38Z"
+            version: 1.0.1
+            createdAt: '2025-05-09T14:25:38Z'
             overlayExtends:
               - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
               - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
-            device:
-              phoneNumber: "+123456788"
-            mappingVersion: "1.0.0"
+            resourceScopes:
+              - phoneNumber: '+123456788'
+            mappingVersion: 1.0.0
             camaraCapabilitiesBitmap: 63
             bitmapCapabilities:
-              "0":
+              '0':
                 name: rr-qod-adi
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.object-instance-restriction.accepted-device-identifiers
-                    version: "0.0.1"
+                    version: 0.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.components.schemas['Device'].properties['ipv4Address']"
+                      - target: $.components.schemas['Device'].properties['ipv4Address']
                         remove: true
-                      - target: "$.components.schemas['Device'].properties['networkAccessIdentifier']"
+                      - target: $.components.schemas['Device'].properties['networkAccessIdentifier']
                         remove: true
-              "1":
+              '1':
                 name: rr-qod-xcor
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.parameter-restriction.x-cor-required
-                    version: "0.0.1"
+                    version: 0.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.components.parameters['x-correlator']"
+                      - target: $.components.parameters['x-correlator']
                         update:
-                          - mandatory: true
-              "2":
+                          xcor-required:
+                            restrictions:
+                              - mandatory: true
+              '2':
                 name: rr-session-extend-unavailable
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.operation-restriction.session-extend-unavailable
-                    version: "0.0.1"
+                    version: 0.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.paths['/sessions/{sessionId}/extend'].post"
-                        targetLocations:
-                          - location: "/paths/~1sessions~1{sessionId}~1extend/post"
+                      - target: $.paths['/sessions/{sessionId}/extend'].post
                         update:
-                          - notAvailable: true
-              "3":
+                          session-extend-unavailable:
+                            restrictions:
+                              - notAvailable: true
+              '3':
                 name: rr-session-accept-qos
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.enum-restriction.accepted-qos-profiles
-                    version: "0.0.1"
+                    version: 0.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     operator: and
                     actions:
                       - targetLocations:
-                          - location: "$method"
+                          - location: $method
                         update:
-                          - enum:
-                            - "POST"
+                          accepted-qos-profiles:
+                            restrictions:
+                              - enum: [POST]
                       - targetLocations:
-                          - location: "$request.path"
+                          - location: $request.path.sessionId
                         update:
-                          - enum:
-                            - "/sessions"
+                          accepted-qos-profiles:
+                            restrictions:
+                              - enum: [/sessions]
                       - targetLocations:
-                          - location: "$request.body#/qosProfile"
+                          - location: $request.body#/qosProfile
                         update:
-                          - enum:
-                            - "QoS_XR"
-                            - "QoS_VC"
-              "4":
+                          accepted-qos-profiles:
+                            restrictions:
+                              - enum: [QoS_XR, QoS_VC]
+              '4':
                 name: rr-ipv6-portspec-max-5
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.object-instance-restriction.appserv-ipv6
-                    version: "0.0.1"
+                    version: 1.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.components.schemas['ApplicationServer'].properties['ipv4Address']"
+                      - target: $.components.schemas['ApplicationServer'].properties['ipv4Address']
                         remove: true
                   - name: org.camaraproject.capability.v0.array-size-restriction.portspec-ports-max5
-                    version: "0.0.1"
+                    version: 1.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.components.schemas['PortsSpec'].properties['ports']"
+                      - target: $.components.schemas['PortsSpec'].properties['ports']
                         update:
-                          - maxItems: 5
-
-              "5":
+                          portspec-ports-max5:
+                            restrictions:
+                              - maxItems: 5
+              '5':
                 name: rr-sessioninfo-duration-multipleof-60
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.numeric-restriction.sessioninfo-duration-min60-multiple60
-                    version: "0.0.1"
+                    version: 1.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                     actions:
-                      - target: "$.components.schemas['SessionInfo'].properties['duration']"
+                      - target: $.components.schemas['SessionInfo'].properties['duration']
                         update:
-                          - minimum: 60
-                          - multipleOf: 60
-              "6":
+                          sessioninfo-duration-min60-multiple60:
+                            restrictions:
+                              - minimum: 60
+                              - multipleOf: 60
+              '6':
                 name: rr-qosprofile-get-unavailable
-                version: "0.0.1"
+                version: 1.0.1
                 restrictions:
                   - name: org.camaraproject.capability.v0.operation-restriction.qosprofile-get-unavailable
-                    version: "0.0.1"
+                    version: 1.0.1
                     extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
                     actions:
-                      - target: "$.paths['/qos-profiles/{name}'].get"
+                      - target: $.paths['/qos-profiles/{name}'].get
                         remove: true
-
     EVENT_CAPABILITY_BITMAP_CHANGED_EXAMPLE:
-      summary:  Cloud event example for capability bitmap changed
+      summary: Cloud event example for capability bitmap changed
       description: Cloud event example for capability bitmap changed
       value:
         id: cb1
         source: https://api.example.com/capability/capability-subscriptions/bitmap
-        datacontenttype: "application/json"
-        specversion: "1.0"
+        datacontenttype: application/json
+        specversion: '1.0'
         type: org.camaraproject.capability.v0.capability-bitmap-changed
-        time: "2025-05-06T00:00:00.000Z"
+        time: '2025-05-06T00:00:00.000Z'
         data:
           capabilityBitmap:
-            device:
-              phoneNumber: "+123456788"
+            resourceScopes:
+              - phoneNumber: '+123456788'
             overlayExtends:
               - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
               - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
-            mappingVersion: "1.0.0"
+            mappingVersion: 1.0.0
             camaraCapabilitiesBitmap: 127
-
-
+    EVENT_CAPABILITY_BITMAP_CHANGED_BATCH_EXAMPLE:
+      summary: Batch (single item) - capability bitmap changed
+      description: Cloud event batch example for capability bitmap changed
+      value:
+        - id: cb1
+          source: https://api.example.com/capability/capability-subscriptions/bitmap
+          datacontenttype: application/json
+          specversion: '1.0'
+          type: org.camaraproject.capability.v0.capability-bitmap-changed
+          time: '2025-05-06T00:00:00.000Z'
+          data:
+            capabilityBitmap:
+              resourceScopes:
+                - phoneNumber: '+123456788'
+              overlayExtends:
+                - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
+                - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
+              mappingVersion: 1.0.0
+              camaraCapabilitiesBitmap: 127
     EVENT_CAPABILITY_INFO_CHANGED_EXAMPLE:
       description: Cloud event example for capability info changed
       value:
         id: ci1
         source: https://api.example.com/capability/capability-subscriptions/info
-        specversion: "1.0"
-        datacontenttype: "application/json"
+        specversion: '1.0'
+        datacontenttype: application/json
         type: org.camaraproject.capability.v0.capability-info-changed
-        time: "2025-05-06T00:00:00.000Z"
+        time: '2025-05-06T00:00:00.000Z'
         data:
           capabilityInfo:
             details:
               - name: cap-qod-adi
-                version: "0.0.2"
-                createdAt: "2025-05-09T14:25:38Z"
+                version: 1.0.2
+                createdAt: '2025-05-09T14:25:38Z'
                 overlayExtends:
                   - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                   - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
-                device:
-                  phoneNumber: "+123456788"
-                mappingVersion: "1.0.0"
+                resourceScopes:
+                  - phoneNumber: '+123456788'
+                mappingVersion: 1.0.0
                 camaraCapabilitiesBitmap: 1
                 bitmapCapabilities:
-                  "0":
+                  '0':
                     name: rr-qod-adi
-                    version: "0.0.1"
+                    version: 1.0.1
                     restrictions:
                       - name: org.camaraproject.capability.v0.object-instance-restriction.accepted-device-identifiers
-                        version: "0.0.1"
+                        version: 1.0.1
                         extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
                         actions:
-                          - target: "$.components.schemas['Device'].properties['ipv4Address']"
+                          - target: $.components.schemas['Device'].properties['ipv4Address']
                             remove: true
-                          - target: "$.components.schemas['Device'].properties['networkAccessIdentifier']"
+                          - target: $.components.schemas['Device'].properties['networkAccessIdentifier']
                             remove: true
+    EVENT_CAPABILITY_INFO_CHANGED_BATCH_EXAMPLE:
+      summary: Batch (single item) - capability info changed
+      description: Cloud event batch example for capability info changed
+      value:
+        - id: ci1
+          source: https://api.example.com/capability/capability-subscriptions/info
+          specversion: '1.0'
+          datacontenttype: application/json
+          type: org.camaraproject.capability.v0.capability-info-changed
+          time: '2025-05-06T00:00:00.000Z'
+          data:
+            capabilityInfo:
+              details:
+                - name: cap-qod-adi
+                  version: 1.0.2
+                  createdAt: '2025-05-09T14:25:38Z'
+                  overlayExtends:
+                    - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
+                    - https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/qos-profiles.yaml
+                  resourceScopes:
+                    - phoneNumber: '+123456788'
+                  mappingVersion: 1.0.0
+                  camaraCapabilitiesBitmap: 1
+                  bitmapCapabilities:
+                    '0':
+                      name: rr-qod-adi
+                      version: 1.0.1
+                      restrictions:
+                        - name: org.camaraproject.capability.v0.object-instance-restriction.accepted-device-identifiers
+                          version: 1.0.1
+                          extends: https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml
+                          actions:
+                            - target: $.components.schemas['Device'].properties['ipv4Address']
+                              remove: true
+                            - target: $.components.schemas['Device'].properties['networkAccessIdentifier']
+                              remove: true

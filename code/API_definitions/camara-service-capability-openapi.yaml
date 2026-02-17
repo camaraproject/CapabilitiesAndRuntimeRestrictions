@@ -265,25 +265,25 @@ paths:
 components:
   securitySchemes:
     openId:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/securitySchemes/openId
+      $ref: ../common/CAMARA_common.yaml#/components/securitySchemes/openId
     notificationsBearerAuth:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
+      $ref: ../common/CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
   parameters:
     x-correlator:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/parameters/x-correlator
+      $ref: ../common/CAMARA_common.yaml#/components/parameters/x-correlator
     If-None-Match:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/parameters/If-None-Match
+      $ref: ../common/CAMARA_common.yaml#/components/parameters/If-None-Match
     If-Modified-Since:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/parameters/If-Modified-Since
+      $ref: ../common/CAMARA_common.yaml#/components/parameters/If-Modified-Since
   headers:
     x-correlator:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/headers/x-correlator
+      $ref: ../common/CAMARA_common.yaml#/components/headers/x-correlator
     Cache-Control:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/headers/Cache-Control
+      $ref: ../common/CAMARA_common.yaml#/components/headers/Cache-Control
     ETag:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/headers/ETag
+      $ref: ../common/CAMARA_common.yaml#/components/headers/ETag
     Last-Modified:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/headers/Last-Modified
+      $ref: ../common/CAMARA_common.yaml#/components/headers/Last-Modified
   schemas:
     # General items used throughout the specification
     Contexts:
@@ -465,11 +465,11 @@ components:
 
     # Overlay imports
     Overlay:
-      $ref: ../../documentation/SupportingDocuments/overlay-openapi.yaml#/components/schemas/Overlay
+      $ref: ../modules/overlay-openapi.yaml#/components/schemas/Overlay
     Action:
-      $ref: ../../documentation/SupportingDocuments/overlay-openapi.yaml#/components/schemas/Action-Object
+      $ref: ../modules/overlay-openapi.yaml#/components/schemas/Action-Object
     Extends:
-      $ref: ../../documentation/SupportingDocuments/overlay-openapi.yaml#/components/schemas/Extends
+      $ref: ../modules/overlay-openapi.yaml#/components/schemas/Extends
 
     # Camara extensions to Open API Overlay components
     CamaraOverlay:
@@ -963,27 +963,27 @@ components:
             $ref: '#/components/schemas/Extends'
       required: [overlayExtends]
     ResourceScopes:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/schemas/ResourceScopes
+      $ref: ../common/CAMARA_common.yaml#/components/schemas/ResourceScopes
     ErrorInfo:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/schemas/ErrorInfo
+      $ref: ../common/CAMARA_common.yaml#/components/schemas/ErrorInfo
 
     # Event structures
     CamaraExtendedSubscriptionRequest:
-      $ref: ../../documentation/SupportingDocuments/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedSubscriptionRequest
+      $ref: ../common/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedSubscriptionRequest
     org.camaraproject.capability.v0.detail:
       description: The detail of the requested capability event subscription.
       type: object
       allOf:
-        - $ref: ../../documentation/SupportingDocuments/CAMARA-subscriptions-openapi.yaml#/components/schemas/SubscriptionDetail
+        - $ref: ../common/CAMARA-subscriptions-openapi.yaml#/components/schemas/SubscriptionDetail
         - type: object
           properties:
             resourceScopes:
               $ref: '#/components/schemas/ResourceScopes'
           additionalProperties: false
     CloudEvent:
-      $ref: ../../documentation/SupportingDocuments/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute
+      $ref: ../common/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraExtendedCloudEventsAttribute
     CloudEventData:
-      $ref: ../../documentation/SupportingDocuments/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraCloudEventData
+      $ref: ../common/CAMARA-subscriptions-openapi.yaml#/components/schemas/CamaraCloudEventData
     org.camaraproject.capability.v0.capability-bitmap-changed:
       description: Event structure for capability bitmap changed
       allOf:
@@ -1035,7 +1035,7 @@ components:
         x-correlator:
           $ref: '#/components/headers/x-correlator'
     Generic400:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic400
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic400
     CapabilityApiBadRequest400:
       description: Bad Request when query capability
       headers:
@@ -1084,11 +1084,11 @@ components:
                 code: INVALID_TOKEN
                 message: Only bearer token is supported
     Generic401:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic401
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic401
     Generic403:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic403
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic403
     Generic404:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic404
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic404
     CapabilityApiNotFound404:
       description: Capability API not found
       content:
@@ -1108,15 +1108,15 @@ components:
             code: NOT_FOUND
             message: No Capability API found
     Generic409:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic409
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic409
     Generic410:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic410
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic410
     Generic429:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic429
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic429
     Generic500:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic500
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic500
     Generic503:
-      $ref: ../../documentation/SupportingDocuments/CAMARA_common.yaml#/components/responses/Generic503
+      $ref: ../common/CAMARA_common.yaml#/components/responses/Generic503
   examples:
     CAMARA_CAPABILITY_QUERY_REQUEST_EXAMPLE:
       summary: Example of capability query

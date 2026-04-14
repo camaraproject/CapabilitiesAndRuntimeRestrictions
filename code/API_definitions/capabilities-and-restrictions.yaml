@@ -3,7 +3,7 @@ openapi: 3.0.3
 info:
   title: Capabilities and Restrictions
   description: |
-    The CAMARA Service Capability API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified
+    The Capabilities and Restrictions API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified
     about active/inactive capabilities (functions) for APIs.
 
     It delivers a tailored service capability based on consumer context, supporting complex request bodies, endpoint removal, and dynamic restrictions.
@@ -12,7 +12,7 @@ info:
     This API enables feature discovery and near-real-time feature status notifications for APIs provided by the gateway / provider.
 
     Overlay-based restrictions use JSON Schema Validation (draft-bhutton-json-schema-validation-01) keywords and ensure restriction-only constraints.
-    The specification supports dynamic tailoring via `POST /camara/service/capability/v0`, which returns a restriction mapping with bit positions, capability identifiers,
+    The specification supports dynamic tailoring via `POST /capabilities-and-restrictions/v0`, which returns a restriction mapping with bit positions, capability identifiers,
     and a mapping version. Initial restriction states are included in the successful response. Restriction state changes are notified via CloudEvents using bitmap-only
     payloads for restrictions and leveraging the restriction mapping for synchronization. Versioning ensures consumers adapt to mapping changes.
 
@@ -75,7 +75,7 @@ info:
     ```
     **How it works**
     1. **Query capabilities**
-       Client sends one or more `CamaraCapabilityQuery` objects to `/camara/service/capability/v0`.
+       Client sends one or more `CamaraCapabilityQuery` objects to `/capabilities-and-restrictions/v0`.
     2. **Inspect response**
        API returns a `CapabilityInfo` object with per-capability details, overlays, and restriction sets.
     3. **Receive updates automatically**
@@ -87,7 +87,7 @@ info:
     For full schema definitions and examples, see the components section below.
 
     ### Summary:
-    1. `POST /camara/service/capability/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
+    1. `POST /capabilities-and-restrictions/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
     2. CloudEvents Notifications: Signals restriction state changes (active/inactive) via bitmap change event and new restrictions via info change event, ensuring efficient synchronization.
     3. Versioning: Uses mappingVersion to handle changes in the restriction mapping, preventing synchronization errors.
 

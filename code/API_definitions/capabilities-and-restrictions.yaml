@@ -1,9 +1,9 @@
 ---
 openapi: 3.0.3
 info:
-  title: CAMARA Service Capability API
+  title: Capabilities and Restrictions
   description: |
-    The CAMARA Service Capability API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified
+    The Capabilities and Restrictions API provides programmable interface for developers and other users (capabilities consumers) to discover and be notified
     about active/inactive capabilities (functions) for APIs.
 
     It delivers a tailored service capability based on consumer context, supporting complex request bodies, endpoint removal, and dynamic restrictions.
@@ -12,7 +12,7 @@ info:
     This API enables feature discovery and near-real-time feature status notifications for APIs provided by the gateway / provider.
 
     Overlay-based restrictions use JSON Schema Validation (draft-bhutton-json-schema-validation-01) keywords and ensure restriction-only constraints.
-    The specification supports dynamic tailoring via `POST /camara/service/capability/v0`, which returns a restriction mapping with bit positions, capability identifiers,
+    The specification supports dynamic tailoring via `POST /capabilities-and-restrictions/v0`, which returns a restriction mapping with bit positions, capability identifiers,
     and a mapping version. Initial restriction states are included in the successful response. Restriction state changes are notified via CloudEvents using bitmap-only
     payloads for restrictions and leveraging the restriction mapping for synchronization. Versioning ensures consumers adapt to mapping changes.
 
@@ -49,25 +49,25 @@ info:
     The Camara Service Capability API enables clients to discover and manage CAMARA API capabilities
     through a simple, RESTful interface and receive automatic CloudEvents when state changes.
     ```mermaid
-            Client            Webhook/Sink       Capability API        CloudEvents Broker
-              |                     |                   |                        |
-              |---------------------------------------->|                        |
-              | POST /camara/service/capability/v0      |                        |
-              |<----------------------------------------|                        |
-              |     201 + CapabilityInfo                |                        |
-              |                     |                   |                        |
-              |                     |                   |----------------------> |
-              |                     |                   | Create Subscription    |
-              |                     |                   |   for capability       |
-              |                     |                   |   changes              |
-              |                     |                   |----------------------->|
-              |                     |                   | Capability Changed     |
-              |                     |<-------------------------------------------|
-              |                     |     POST CloudEvent to Webhook             |
-              |                     |                   |                        |
-              |                     |------------------------------------------->|
-              |                     |                  204                       |
-              |                     |                   |                        |
+            Client            Webhook/Sink                   Capability API        CloudEvents Broker
+              |                     |                                |                        |
+              |----------------------------------------------------->|                        |
+              | POST /capabilities-and-restrictions/retrieve/v0      |                        |
+              |<-----------------------------------------------------|                        |
+              |     201 + CapabilityInfo                             |                        |
+              |                     |                                |                        |
+              |                     |                                |----------------------> |
+              |                     |                                | Create Subscription    |
+              |                     |                                |   for capability       |
+              |                     |                                |   changes              |
+              |                     |                                |----------------------->|
+              |                     |                                | Capability Changed     |
+              |                     |<--------------------------------------------------------|
+              |                     |   POST CloudEvent to Webhook                            |
+              |                     |                                |                        |
+              |                     |-------------------------------------------------------->|
+              |                     |                  204                                    |
+              |                     |                                |                        |
         The Capability API responds with the supported capabilities and then internally
         registers for capability change events if 'subscriptionRequest' is provided in the request.
         As capabilities change event notifications are forwarded through a CloudEvents Broker to
@@ -75,7 +75,7 @@ info:
     ```
     **How it works**
     1. **Query capabilities**
-       Client sends one or more `CamaraCapabilityQuery` objects to `/camara/service/capability/v0`.
+       Client sends one or more `CamaraCapabilityQuery` objects to `/capabilities-and-restrictions/v0`.
     2. **Inspect response**
        API returns a `CapabilityInfo` object with per-capability details, overlays, and restriction sets.
     3. **Receive updates automatically**
@@ -87,7 +87,7 @@ info:
     For full schema definitions and examples, see the components section below.
 
     ### Summary:
-    1. `POST /camara/service/capability/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
+    1. `POST /capabilities-and-restrictions/v0`: Returns tailored CapabilityBitmap that assigns bit positions of each restriction, a mappingVersion for versioning for new restrictions.
     2. CloudEvents Notifications: Signals restriction state changes (active/inactive) via bitmap change event and new restrictions via info change event, ensuring efficient synchronization.
     3. Versioning: Uses mappingVersion to handle changes in the restriction mapping, preventing synchronization errors.
 
@@ -151,21 +151,21 @@ externalDocs:
   description: Product documentation at Camara
   url: https://github.com/camaraproject/
 servers:
-  - url: '{apiRoot}/camara-service-capability-openapi/vwip'
+  - url: '{apiRoot}/capabilities-and-restrictions/vwip'
     variables:
       apiRoot:
         default: http://localhost:9091
         description: API root
 tags:
-  - name: CAMARA Service Capability Query
+  - name: Capabilities and Restrictions Query
     description: Returns the Service Capability for specified CAMARA service APIs
       on the API gateway / producer side.
-  - name: CAMARA Service Capability notifications callback
+  - name: Capabilities and Restrictions Notifications Callback
     description: Callback endpoint for receiving notifications on capability changes.
 paths:
-  /camara/service/capability/v0:
+  /retrieve:
     post:
-      tags: [CAMARA Service Capability Query]
+      tags: [Capabilities and Restrictions Query]
       summary: Retrieve tailored service capabilities based on consumer context
       description: |
         Returns service capability information tailored to the consumer's context, including active/inactive restrictions and mapping metadata.
@@ -191,8 +191,8 @@ paths:
         notifications:
           '{$request.body#/subscriptionRequest/sink}':
             post:
-              tags: [CAMARA Service Capability notifications callback]
-              summary: CAMARA Service Capability notifications callback
+              tags: [Capabilities and Restrictions Notifications Callback]
+              summary: Capabilities and Restrictions Notifications Callback
               description: |
                 Important: this endpoint is to be implemented by the API consumer.
                 The API provider will call this endpoint whenever any CAMARA Service Capability change related event occurs.

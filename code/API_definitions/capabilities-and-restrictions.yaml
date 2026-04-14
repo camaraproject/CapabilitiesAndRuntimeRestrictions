@@ -63,10 +63,10 @@ info:
               |                     |                                |----------------------->|
               |                     |                                | Capability Changed     |
               |                     |<--------------------------------------------------------|
-              |                     |   POST CloudEvent to Webhook   |                        |
+              |                     |   POST CloudEvent to Webhook                            |
               |                     |                                |                        |
               |                     |-------------------------------------------------------->|
-              |                     |                  204                                    |  
+              |                     |                  204                                    |
               |                     |                                |                        |
         The Capability API responds with the supported capabilities and then internally
         registers for capability change events if 'subscriptionRequest' is provided in the request.

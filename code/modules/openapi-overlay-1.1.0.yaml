@@ -1,0 +1,193 @@
+# Hand-authored YAML mirror of the OpenAPI Overlay Specification, version 1.1.0.
+# Authoritative source (version-pinned): https://spec.openapis.org/overlay/v1.1.0.html
+#
+# IMPORTANT: this file targets Overlay 1.1.0 *specifically*. Do NOT replace the
+# version-pinned URL above with https://spec.openapis.org/overlay/latest.html —
+# `latest.html` follows the upstream release train (Overlay 1.2.0 and beyond)
+# and would silently change the contract this file is meant to mirror. If a
+# future CAMARA design adopts a newer Overlay version, create a sibling file
+# (e.g. `openapi-overlay-1.2.0.yaml`) rather than mutating this one. The
+# Overlay 1.0.0 mirror is preserved alongside this one as
+# `openapi-overlay-1.0.0.yaml`; pick the file that matches the Overlay version
+# the consuming CAMARA API is designed against.
+#
+# This file exists solely to provide a $ref-able JSON Schema representation of
+# the upstream Overlay 1.1.0 object family (Overlay, Info, Action). It is NOT
+# a CAMARA API in its own right. Do not modify the schemas below to reflect
+# CAMARA-specific constraints; CAMARA-side narrowing (such as the
+# "restriction-only" rule) is expressed in prose by the consuming API.
+openapi: 3.0.3
+info:
+  title: OpenAPI Overlay 1.1.0 Schemas
+  description: |
+    Hand-authored YAML mirror of the [OpenAPI Overlay Specification, version
+    1.1.0](https://spec.openapis.org/overlay/v1.1.0.html). The version-pinned
+    URL is deliberate: `https://spec.openapis.org/overlay/latest.html` follows
+    the upstream release train and may resolve to a newer Overlay version,
+    which would change the contract this file mirrors.
+
+    Provides a referencable JSON Schema representation of the upstream Overlay,
+    Info and Action object families so that CAMARA API specifications can type
+    their request/response payloads and CloudEvent `data` payloads against the
+    Overlay 1.1.0 shape without inventing CAMARA-private schemas.
+
+    Differences from the sibling `openapi-overlay-1.0.0.yaml` mirror reflect
+    the upstream 1.0.0 → 1.1.0 delta: the `overlay` version field value
+    changes to `1.1.0`; the Action Object gains an optional `copy` field
+    (RFC 9535 JSONPath selecting a single source node in the target document);
+    precedence among `update`, `copy`, and `remove` is restated so that
+    `remove` wins over both, and `update` and `copy` are mutually exclusive;
+    and the `update` semantics for multi-node targets are clarified.
+
+    This file MUST NOT be modified to encode CAMARA-specific semantics. Any
+    narrowing of valid overlay content (e.g. the CAMARA "restriction-only"
+    rule) is the responsibility of the consuming CAMARA API and is expressed
+    in prose on that API, not on this file. To adopt a newer Overlay version,
+    create a sibling file rather than editing this one.
+  version: 1.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+
+    Overlay:
+      description: |
+        An OpenAPI Overlay document, as defined by version 1.1.0 of the
+        [OpenAPI Overlay Specification](https://spec.openapis.org/overlay/v1.1.0.html).
+        An Overlay declares a set of `actions` to be applied to a target
+        OpenAPI document, allowing the document to be amended without
+        modifying it directly. Schemas in this file mirror Overlay 1.1.0
+        specifically; other Overlay versions are represented in sibling
+        files (e.g. `openapi-overlay-1.0.0.yaml`).
+      type: object
+      required:
+        - overlay
+        - info
+        - actions
+      properties:
+        overlay:
+          type: string
+          description: |
+            The version of the Overlay Specification that this Overlay document
+            uses. For documents conforming to this version of the specification,
+            the value MUST be `1.1.0`.
+          enum:
+            - 1.1.0
+        info:
+          $ref: "#/components/schemas/OverlayInfo"
+        extends:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            URI reference identifying the target document (such as an OpenAPI
+            document) that the Overlay applies to. Optional. When present,
+            processors MAY use this value to locate the target document.
+            Both absolute and relative URI references are permitted.
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: |
+            An ordered list of Action objects to be applied to the target
+            document in sequential order; each action operates on the
+            document state produced by the actions preceding it.
+          items:
+            $ref: "#/components/schemas/OverlayAction"
+
+    OverlayInfo:
+      description: |
+        Provides metadata about the Overlay. Mirrors the Info Object as
+        defined by version 1.1.0 of the
+        [OpenAPI Overlay Specification](https://spec.openapis.org/overlay/v1.1.0.html).
+      type: object
+      required:
+        - title
+        - version
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            A human-readable description of the purpose of the Overlay.
+        description:
+          type: string
+          maxLength: 4096
+          description: |
+            A description of the Overlay document. [CommonMark](https://commonmark.org/)
+            syntax MAY be used for rich text representation.
+        version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            A version identifier for indicating changes to the Overlay
+            document. Distinct from the `overlay` field above, which identifies
+            the version of the Overlay Specification.
+
+    OverlayAction:
+      description: |
+        Describes a single action to be applied to the target document.
+        Mirrors the Action Object as defined by version 1.1.0 of the
+        [OpenAPI Overlay Specification](https://spec.openapis.org/overlay/v1.1.0.html).
+        Per Overlay 1.1.0, precedence among the three mutating fields is:
+        `remove: true` overrides both `update` and `copy`; otherwise `update`
+        and `copy` are mutually exclusive and a processor that encounters
+        both on the same action MUST treat each as having no effect on the
+        other (i.e. neither is applied). When none of `update`, `copy`, or
+        a truthy `remove` is present, the action is a no-op. When `target`
+        selects multiple nodes, those nodes MUST all be objects, all be
+        arrays, or all be primitives.
+      type: object
+      required:
+        - target
+      properties:
+        target:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: |
+            A JSONPath query expression (as defined by [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535))
+            that identifies the node(s) in the target document on which this
+            action operates.
+        description:
+          type: string
+          maxLength: 4096
+          description: |
+            A description of the action. [CommonMark](https://commonmark.org/)
+            syntax MAY be used for rich text representation.
+        update:
+          description: |
+            A value to be merged with (or appended to) each node selected by
+            `target`. If the selected nodes are objects, the value MUST be an
+            object and its properties are merged into each target object. If
+            the selected nodes are arrays, the value is appended to each
+            target array. If the selected nodes are primitives, each target
+            value is replaced by this value. Has no effect when `remove` is
+            `true` or when `copy` is also present on the same action.
+        copy:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: |
+            A JSONPath query expression (as defined by [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535))
+            selecting a single node in the target document whose value is to
+            be copied into each node selected by `target`. Semantics parallel
+            `update`, but the source value is drawn from the document being
+            transformed rather than from the Overlay. Has no effect when
+            `remove` is `true` or when `update` is also present on the same
+            action.
+        remove:
+          type: boolean
+          default: false
+          description: |
+            When `true`, each node selected by `target` is removed from its
+            containing object or array. When `false` (or absent), the target
+            nodes are retained and `update` or `copy` (if any) is applied.
+            If `remove` is `true` it takes precedence over both `update` and
+            `copy`.

@@ -1,0 +1,571 @@
+openapi: 3.0.3
+info:
+  title: Effective Capabilities and Restrictions
+  description: |
+    The Effective Capabilities and Restrictions API lets an API Consumer
+    discover, before invocation, the producer-specific restrictions that apply
+    to one or more released CAMARA APIs in the context of a specific end-user
+    device. The producer returns, per requested CAMARA API, a standard
+    OpenAPI Overlay document — pinned to version
+    [**Overlay 1.1.0**](https://spec.openapis.org/overlay/v1.1.0.html)
+    — that the consumer can apply locally to the corresponding CAMARA API
+    specification to obtain a strictly-valid view of the API for that
+    device-context.
+
+    This file is the Overlay-1.1.0-targeted sibling of
+    `effective-capabilities-and-restrictions.yaml`, which targets Overlay
+    1.0.0. The two variants are kept side-by-side so that consuming
+    deployments can pick the Overlay version they support; they are NOT
+    compatible on the wire (returned overlay documents carry different
+    `overlay` version strings and the 1.1.0 variant forbids the `copy`
+    action introduced upstream — see "Restriction-only semantics" below).
+
+    Note on Overlay versioning: this API targets the Overlay Specification
+    **version 1.1.0** specifically. Returned overlay documents will carry
+    `overlay: "1.1.0"` in their root field, and the schema referenced from
+    [`../modules/openapi-overlay-1.1.0.yaml`](../modules/openapi-overlay-1.1.0.yaml)
+    mirrors Overlay 1.1.0 exclusively. Consumers MUST NOT assume that
+    [`https://spec.openapis.org/overlay/latest.html`](https://spec.openapis.org/overlay/latest.html)
+    resolves to 1.1.0 — that URL follows the upstream release train and may
+    resolve to an Overlay version newer than 1.1.0. Adoption of a newer
+    Overlay version by this API would be a breaking change requiring a new
+    API version.
+
+    # Restriction-only semantics
+
+    Producers MUST emit only restrictive `actions[]` in every overlay returned
+    or delivered by this API. An action is restrictive when it either:
+
+    - sets `remove: true` to delete an existing node from the target document, or
+    - sets `update: { ... }` whose top-level keys narrow the target node using
+      JSON Schema validation keywords — for example, an `enum` that is a strict
+      subset of the existing enum, a lowered `maximum`/`maxLength`/`maxItems`,
+      a raised `minimum`/`minLength`/`minItems`, a tightened `pattern`, a
+      `uniqueItems: true` constraint, or a `required` array that adds
+      previously-optional properties.
+
+    Overlay 1.1.0 adds an optional `copy` field to the Action Object whose
+    semantics (injecting a value drawn from elsewhere in the target document
+    into the node selected by `target`) are not intrinsically restrictive:
+    a `copy` can just as easily widen as narrow the contract, and validating
+    "did this copy actually narrow the target's schema?" requires comparing
+    the JSON Schema at the copy source against the JSON Schema at the
+    target — meaningfully more complex than the keyword-level check used for
+    `update`. To keep validation tractable, this API forbids `copy`
+    outright: producers MUST NOT emit any action that carries a `copy`
+    field, and consumers MUST reject any overlay containing such an action.
+    Restrictive intent for this API is fully expressible with `remove` and
+    `update`.
+
+    Precedence among the mutating fields follows Overlay 1.1.0 unchanged:
+    `remove: true` overrides both `update` and `copy`, and `update` and
+    `copy` are mutually exclusive on a single action. Combined with the
+    rule above, a well-formed restrictive action under this API carries
+    exactly one of `remove: true` or a narrowing `update: { ... }`, never
+    both, and never carries `copy`.
+
+    Consumers MUST reject any overlay whose actions broaden the target
+    document — for example, actions that add new operations, widen an `enum`,
+    introduce new `oneOf` branches, raise a `maximum`, lower a `required`
+    array, or otherwise relax the contract of the underlying CAMARA API.
+
+    **Capabilities are signaled by the absence of a restriction**: any element
+    of the target CAMARA API specification that is *not* referenced by an
+    `action.target` in the returned overlay is supported by the producer with
+    the unmodified semantics defined by that CAMARA API. The overlay therefore
+    enumerates only the producer-specific narrowings; consumers infer
+    capabilities from what the overlay leaves untouched.
+
+    # Operation model
+
+    The single operation `POST /retrieve-effective-overlay` accepts a list of
+    CAMARA API specification URLs (released GitHub versions) and a `device`
+    context. It has two delivery modes selected by whether the request carries
+    a `sink`:
+
+    - **Synchronous** (no `sink`/`sinkCredential`): the producer evaluates the
+      request and returns `200 OK` with an array of OpenAPI Overlay 1.1.0
+      documents, one per requested API, in the same order as the request's
+      `apis[]`.
+    - **Asynchronous (implicit subscription)** (`sink` and `sinkCredential`
+      both present): the producer returns `202 Accepted` immediately with an
+      echo of the registered `sink` (never the credential), and delivers each
+      computed overlay later via the sink as a single non-batch CloudEvent of
+      type
+      `org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated`,
+      one CloudEvent per requested API. Subsequent producer-side state changes
+      (for example, the device moves to a new footprint) result in additional
+      CloudEvents of the same type carrying the updated overlay for the
+      affected API.
+
+    # End-to-end flow at a glance
+
+    ```text
+       App Backend          ECR Producer            Upstream CAMARA
+       (Consumer)           (this API)              API (e.g. QoD)
+            |                     |                        |
+            | (a) [dev-time, one-time] developer or        |
+            |     build pipeline fetches the upstream      |
+            |     CAMARA spec (e.g. QoD r3.2) and          |
+            |     bundles/ships it with the app            |
+            |--------------------------------------------->|
+            |<---------------------------------------------|
+            |                     |                        |
+            |    = = = = = = = = = = = = = = = = = =       |
+            |             runtime (per device)             |
+            |                     |                        |
+            | (b) POST /retrieve-effective-overlay         |
+            |     { apis:[<qod-url>], device:{...} }       |
+            |-------------------->|                        |
+            |                     | resolve (device, api): |
+            |                     |  producer policy +     |
+            |                     |  device footprint      |
+            | (c) 200 OK          |                        |
+            |     [{ overlay:"1.1.0",                      |
+            |        extends:"<qod-url>",                  |
+            |        actions:[ remove,                     |
+            |                  update{enum},               |
+            |                  update{maximum}, ... ] }]   |
+            |<--------------------|                        |
+            |                     |                        |
+            | (d) apply overlay locally to cached spec     |
+            |     => effective contract for THIS device    |
+            |                     |                        |
+            | (e) drive UI; pre-validate request bodies    |
+            |     against the effective contract           |
+            |                     |                        |
+            | (f) POST upstream call (e.g. /sessions),     |
+            |     pre-validated vs. the narrowed schema    |
+            |--------------------------------------------->|
+            |<---------------------------------------------|
+            |     200/201 -- no surprise 422s              |
+    ```
+
+    Async variant: if the request body also carries `sink` and
+    `sinkCredential`, step (c) becomes `202 Accepted` (echoing only the
+    `sink`) and the producer later POSTs `overlay-updated` CloudEvents to
+    the sink — once on the initial evaluation and once on each subsequent
+    effective-view change. The consumer replaces its cached overlay for
+    `data.api` and re-applies, then re-renders step (e) without
+    re-mounting the form.
+
+    # Recovery
+
+    Notification delivery is at-most-once. To recover from a missed
+    notification, a consumer simply re-issues the original
+    `POST /retrieve-effective-overlay` request: the operation is idempotent
+    and the response always reflects the producer's current effective view for
+    the supplied context. There is no bitmap, no `mappingVersion`, no resync
+    state machine.
+
+    # Authorization and authentication
+
+    The "Authorization and authentication" common guidelines, defined in
+    [Commonalities](https://github.com/camaraproject/Commonalities/blob/main/documentation/CAMARA-API-access-and-user-consent.md),
+    apply to this API. The API uses OpenID Connect (OIDC) authentication, and
+    grant management via CIBA. The required scope for the
+    `retrieveEffectiveOverlay` operation is
+    `effective-capabilities-and-restrictions:retrieve-effective-overlay`, which
+    grants the right to retrieve the effective overlay for a given device.
+    Callback (`sink`) authentication is conveyed out-of-band by the
+    `sinkCredential` supplied with the request; the credential itself is never
+    echoed in any response.
+
+    # Additional CAMARA error responses
+
+    The list of error codes in this API specification is not exhaustive.
+    Therefore the API specification may not document some non-mandatory error
+    statuses such as 504 (Gateway Timeout) introduced by Commonalities.
+    Consumers MUST be prepared to handle other error responses than those
+    listed here. Where appropriate, error responses follow the standard
+    CAMARA error structure defined in `CAMARA_common.yaml`.
+
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: wip
+  x-camara-commonalities: 0.8.0-rc.2
+
+externalDocs:
+  description: Product documentation at CAMARA
+  url: https://github.com/camaraproject/
+
+servers:
+  - url: "{apiRoot}/effective-capabilities-and-restrictions/vwip"
+    variables:
+      apiRoot:
+        default: http://localhost:9091
+        description: |
+          API root, defined by the service provider, e.g.
+          `api.example.com` or `api.example.com/somepath`.
+
+tags:
+  - name: Effective Overlay
+    description: |
+      Retrieve producer-specific effective overlay documents for one or more
+      CAMARA APIs in the context of a given device. Optionally subscribe to
+      overlay updates via an implicit `sink` callback.
+
+security:
+  - openId:
+      - effective-capabilities-and-restrictions:retrieve-effective-overlay
+
+paths:
+  /retrieve-effective-overlay:
+    post:
+      tags:
+        - Effective Overlay
+      summary: Retrieve the effective overlay for one or more CAMARA APIs
+      description: |
+        Computes the producer-specific effective overlay for each CAMARA API
+        listed in `apis[]`, in the context of the supplied `device`.
+
+        - If neither `sink` nor `sinkCredential` is supplied, returns
+          `200 OK` synchronously with an array of
+          [OpenAPI Overlay 1.1.0](https://spec.openapis.org/overlay/v1.1.0.html)
+          documents, one per entry in `apis[]`, in the same order as the
+          request.
+        - If both `sink` and `sinkCredential` are supplied, returns
+          `202 Accepted` with no overlays in the body (the response echoes
+          only the registered `sink`) and the producer subsequently delivers
+          one CloudEvent of type
+          `org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated`
+          per requested API via the registered `sink`. Additional CloudEvents
+          of the same type are delivered whenever the effective overlay for
+          any of the requested APIs changes.
+
+        The operation is idempotent: repeating the same request returns the
+        same effective overlay set (or schedules the same async delivery) for
+        a stable producer-side configuration. To recover from a missed
+        notification, simply re-issue the request.
+      operationId: retrieveEffectiveOverlay
+      parameters:
+        - $ref: "../common/CAMARA_common.yaml#/components/parameters/x-correlator"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetrieveEffectiveOverlayRequest"
+      callbacks:
+        overlayUpdated:
+          "{$request.body#/sink}":
+            post:
+              summary: "overlay-updated notification callback"
+              description: |
+                Important: this endpoint is to be implemented by the API
+                consumer. The Effective Capabilities and Restrictions producer
+                POSTs to this endpoint once per affected CAMARA API whenever
+                the effective overlay changes for the device-context of an
+                active asynchronous request. Each notification is a single
+                (non-batch) CloudEvent.
+              operationId: postOverlayUpdated
+              parameters:
+                - $ref: "../common/CAMARA_common.yaml#/components/parameters/x-correlator"
+              requestBody:
+                required: true
+                content:
+                  application/cloudevents+json:
+                    schema:
+                      $ref: "#/components/schemas/OverlayUpdatedEvent"
+              responses:
+                "204":
+                  description: Successful notification
+                  headers:
+                    x-correlator:
+                      $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
+                "400":
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic400"
+                "401":
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic401"
+                "403":
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic403"
+                "410":
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic410"
+                "429":
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic429"
+              security:
+                - {}
+                - notificationsBearerAuth: []
+      responses:
+        "200":
+          description: |
+            Synchronous response. The body is an array of
+            [OpenAPI Overlay 1.1.0](https://spec.openapis.org/overlay/v1.1.0.html)
+            documents, one per entry in the request's `apis[]`, in the same
+            order. Returned only when the request omits both `sink` and
+            `sinkCredential`.
+          headers:
+            x-correlator:
+              $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
+          content:
+            application/json:
+              schema:
+                type: array
+                minItems: 1
+                maxItems: 20
+                description: |
+                  One [OpenAPI Overlay 1.1.0](https://spec.openapis.org/overlay/v1.1.0.html)
+                  document per requested CAMARA API, in the same order as the
+                  request's `apis[]`. Each document carries `overlay: "1.1.0"`
+                  in its root field.
+                items:
+                  $ref: "../modules/openapi-overlay-1.1.0.yaml#/components/schemas/Overlay"
+        "202":
+          description: |
+            Asynchronous acceptance. Returned only when both `sink` and
+            `sinkCredential` are present in the request. No overlays are
+            included in the body; the producer will deliver one CloudEvent
+            of type
+            `org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated`
+            per requested API to the registered `sink`. The body echoes only
+            the registered `sink` so the consumer can confirm the value the
+            producer captured. The `sinkCredential` is never echoed.
+          headers:
+            x-correlator:
+              $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrieveEffectiveOverlayAccepted"
+        "400":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic400"
+        "401":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic401"
+        "403":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic403"
+        "404":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic404"
+        "422":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic422"
+        "429":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic429"
+        "500":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic500"
+        "503":
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic503"
+
+components:
+  securitySchemes:
+    openId:
+      $ref: "../common/CAMARA_common.yaml#/components/securitySchemes/openId"
+    notificationsBearerAuth:
+      $ref: "../common/CAMARA_event_common.yaml#/components/securitySchemes/notificationsBearerAuth"
+
+  schemas:
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Device (inline)
+    #
+    # Inlined per design contract: this API exposes `device` as its sole wire
+    # context input. The shape mirrors the canonical CAMARA Device but is
+    # declared locally with no $refs to ../common so the wire contract for
+    # this API is fully self-contained.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    Device:
+      description: |
+        End-user equipment able to connect to a mobile network. Examples
+        include smartphones and IoT sensors/actuators.
+
+        The API Consumer can provide one or more of the following identifiers
+        and the API Producer will use one identifier of its choice for the
+        producer-side policy evaluation:
+          - `phoneNumber`
+          - `networkAccessIdentifier`
+          - `ipv4Address`
+          - `ipv6Address`
+
+        At least one identifier MUST be present.
+      type: object
+      minProperties: 1
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+[1-9][0-9]{4,14}$'
+          maxLength: 16
+          description: |
+            A public identifier addressing a telephone subscription. In mobile
+            networks it corresponds to the MSISDN, formatted in international
+            E.164 form prefixed with `+`.
+          example: "+123456789"
+        networkAccessIdentifier:
+          type: string
+          maxLength: 2048
+          description: |
+            A public identifier addressing a subscription in a mobile network.
+            In 3GPP terminology, it corresponds to the GPSI formatted with the
+            External Identifier (`{Local Identifier}@{Domain Identifier}`).
+          example: "123456789@example.com"
+        ipv4Address:
+          $ref: "#/components/schemas/DeviceIpv4Address"
+        ipv6Address:
+          type: string
+          format: ipv6
+          maxLength: 45
+          description: |
+            The device should be identified by the observed IPv6 address, or
+            by any single IPv6 address from within the subnet allocated to the
+            device.
+          example: "2001:db8:85a3:8d3:1319:8a2e:370:7344"
+
+    DeviceIpv4Address:
+      description: |
+        The device IPv4 identification. `publicAddress` MUST always be present;
+        in addition, at least one of `privateAddress` or `publicPort` MUST be
+        present so the device can be uniquely identified through NAT.
+      type: object
+      properties:
+        publicAddress:
+          type: string
+          format: ipv4
+          maxLength: 15
+          description: A single public (observed) IPv4 address.
+          example: "84.125.93.10"
+        privateAddress:
+          type: string
+          format: ipv4
+          maxLength: 15
+          description: A single private (allocated) IPv4 address.
+          example: "10.0.0.5"
+        publicPort:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 65535
+          description: TCP or UDP source port observed at the application server.
+          example: 59765
+      anyOf:
+        - required: [publicAddress, privateAddress]
+        - required: [publicAddress, publicPort]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Request body
+    # ─────────────────────────────────────────────────────────────────────────
+
+    RetrieveEffectiveOverlayRequest:
+      description: |
+        Request body for `POST /retrieve-effective-overlay`. Carries the list
+        of CAMARA APIs to evaluate, the device context, and (optionally) an
+        implicit-subscription `sink` + `sinkCredential` pair selecting
+        asynchronous delivery.
+
+        Either both `sink` and `sinkCredential` are present (asynchronous
+        mode, `202` response) or neither is present (synchronous mode,
+        `200` response).
+      type: object
+      required:
+        - apis
+      properties:
+        apis:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: |
+            One or more URLs identifying released GitHub versions of CAMARA
+            API specifications for which the producer's effective overlay is
+            requested. The producer returns one overlay per entry, in the
+            same order.
+          items:
+            type: string
+            format: uri
+            maxLength: 2048
+            description: |
+              URL of a released version of a CAMARA API specification on
+              GitHub, e.g.
+              `https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml`.
+            example: "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
+        device:
+          $ref: "#/components/schemas/Device"
+        sink:
+          type: string
+          format: uri
+          maxLength: 2048
+          pattern: '^https://.+$'
+          description: |
+            HTTPS URL at which the API Consumer is willing to receive
+            `overlay-updated` CloudEvents. Presence of this property (together
+            with `sinkCredential`) selects the asynchronous delivery mode and
+            implicitly subscribes the consumer to overlay updates for the
+            requested APIs.
+          example: "https://consumer.example.com/effective-overlay/notifications"
+        sinkCredential:
+          $ref: "../common/CAMARA_event_common.yaml#/components/schemas/SinkCredential"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Accepted response (async mode)
+    #
+    # Echoes only the registered `sink` so the consumer can confirm the value
+    # the producer captured. The `sinkCredential` is never echoed.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    RetrieveEffectiveOverlayAccepted:
+      description: |
+        Acknowledges acceptance of an asynchronous request. Echoes only the
+        registered `sink`; overlays are delivered later via CloudEvents and
+        are not part of this response.
+      type: object
+      required:
+        - sink
+      properties:
+        sink:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            The HTTPS sink URL the producer has registered for this request.
+            Echoed verbatim from the request body for consumer confirmation.
+          example: "https://consumer.example.com/effective-overlay/notifications"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CloudEvent notification
+    # ─────────────────────────────────────────────────────────────────────────
+
+    OverlayUpdatedEventType:
+      type: string
+      description: |
+        The single CloudEvent type emitted by this API. One CloudEvent is
+        delivered per affected CAMARA API.
+      enum:
+        - org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated
+
+    OverlayUpdatedEventData:
+      description: |
+        Payload of an `overlay-updated` CloudEvent. Identifies the CAMARA API
+        whose effective overlay has changed and carries the full replacement
+        overlay document. Consumers replace any prior overlay for `api` with
+        `overlay`.
+      type: object
+      required:
+        - api
+        - overlay
+      properties:
+        api:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: |
+            URL of the CAMARA API specification whose effective overlay has
+            changed. Matches one of the entries in the original request's
+            `apis[]`.
+          example: "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
+        overlay:
+          $ref: "../modules/openapi-overlay-1.1.0.yaml#/components/schemas/Overlay"
+
+    OverlayUpdatedEvent:
+      description: |
+        CloudEvents 1.0 envelope for an `overlay-updated` notification. The
+        `type` is constrained to the single value defined by this API and the
+        `data` payload carries the replacement overlay for one CAMARA API.
+      allOf:
+        - $ref: "../common/CAMARA_event_common.yaml#/components/schemas/CloudEvent"
+        - type: object
+          required:
+            - type
+            - data
+          properties:
+            type:
+              $ref: "#/components/schemas/OverlayUpdatedEventType"
+            data:
+              $ref: "#/components/schemas/OverlayUpdatedEventData"

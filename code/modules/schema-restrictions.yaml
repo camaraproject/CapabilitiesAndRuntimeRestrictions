@@ -1,0 +1,442 @@
+
+openapi: 3.0.3
+info:
+  title: CAMARA Schema Restrictions Vocabulary 1.1.2
+  description: |
+    Defines the closed, narrowing-only vocabulary for the `update` field of
+    a CAMARA restrictive overlay action. Every validation restriction in this
+    vocabulary reduces the set of valid instances of the target node. Annotation
+    restrictions do not widen the target schema and MUST NOT contradict the
+    original target schema.
+
+    ## Changes from 1.0.0
+
+    1. Added `additionalProperties: false` to `SchemaRestrictions`.
+    2. Added clarification to operator 'not' that restrictions array contains only one
+    value. Validators MUST enforce this rule semantically.
+    3. Updated restrictions text on valid SchemaRestrictions restrictions array entries to avoid value / property smuggling.
+    4. Rename SchemaRestrictionMeta to SchemaRestrictionAnnotation for accuracy
+    5. Constrained readOnly, writeOnly and deprecated to only 'true' values.  Allowing a true to false transition is not a restriction.
+    6. Added scalar type support for `enum`, `const`, and `default`.
+    7. Renamed SchemaRestrictionPresence to SchemaRestrictionInstancePresence
+    8. Made operation restrictions mutually exclusive
+    9. Restricted `allowEmptyValue` to `false` to ensure only actionable restrictions are captured.
+    10. Added support for `multipleOf` values below 1.
+    11. `SchemaRestriction` uses `oneOf` (not `anyOf`): a restriction object
+        must match exactly one subtype. This prevents ambiguous objects that
+        simultaneously satisfy multiple subtypes from passing validation.
+    12. Every subtype adds `minProperties: 1`: an empty `{}` object no longer
+        validates as a `SchemaRestriction`. Every restriction must carry at
+        least one keyword.
+
+    ## Entry point
+
+    Consuming APIs reference `SchemaRestrictions` as the value type for
+    `RestrictiveAction.update.additionalProperties`. `SchemaRestrictions`
+    composes one or more `SchemaRestriction` objects via a logical operator
+    (`and`, `or`, or `not`). Each `SchemaRestriction` resolves via `oneOf`
+    to exactly one of the nine typed subschemas below.
+
+    ## Restriction subtypes
+
+    | Schema | Applies to | Keywords |
+    |---|---|---|
+    | `SchemaRestrictionAnnotation` | any node | deprecated, readOnly, writeOnly, default |
+    | `SchemaRestrictionAnyInstance` | any node | type, enum (strict subset), const |
+    | `SchemaRestrictionNumeric` | number/integer | maximum, minimum, exclusiveMaximum, exclusiveMinimum, multipleOf |
+    | `SchemaRestrictionString` | string | maxLength, minLength, pattern |
+    | `SchemaRestrictionArray` | array | maxItems, minItems, uniqueItems (true only), maxContains, minContains |
+    | `SchemaRestrictionObject` | object | maxProperties, minProperties, required (add-only), dependentRequired, excludedProperties |
+    | `SchemaRestrictionParameter` | OAS Parameter Object | allowEmptyValue, mandatory (true only) |
+    | `SchemaRestrictionOperation` | OAS Operation Object | notImplemented (true only), notAvailable (true only) |
+    | `SchemaRestrictionInstancePresence` | any node | presence (true = must exist, false = must be absent) |
+
+    ## Versioning
+
+    This file is frozen at version 1.1.2. A new restriction type is a
+    minor addition; a redefinition of an existing subtype's semantics is a
+    major change. Either requires a new sibling file
+    (`schema-restrictions-1.2.0.yaml` or `schema-restrictions-2.0.0.yaml`).
+    Consuming APIs pin their `$ref` to the versioned filename and therefore
+    never silently inherit vocabulary changes.
+
+  version: 1.1.2
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths: {}
+
+components:
+  schemas:
+
+    SchemaRestrictions:
+      description: |
+        A named set of schema constraints evaluated against a single target
+        node in the OpenAPI document.
+        `restrictions` — one or more `SchemaRestriction` objects, each
+          returning a boolean result when applied to the target.
+
+        Each entry in the `restrictions` array MUST be independently
+        target-aware valid and subset-preserving relative to the same target
+        node. A restriction entry that would widen the target schema, rely on
+        another entry to become valid, or admit any value not admitted by the
+        original target schema MUST be rejected.
+
+        `operator` — logical combinator:
+        - `and` combines valid restrictions by intersection.
+        - `or` combines valid restrictions by union. Because every entry is
+          independently subset-preserving relative to the same target node, the
+          union remains subset-preserving.
+        - `not` negates a single restriction result. It MUST be evaluated only where
+          the validator can prove that the negated result is subset-preserving
+          relative to the same target node; otherwise it MUST be rejected.
+      type: object
+      additionalProperties: false
+      required: [restrictions]
+      properties:
+        targetKind:
+          description: |
+            Optional expected kind of the target node selected by the enclosing
+            overlay action. When present, validators MUST verify that the resolved
+            target node has this kind before applying the restriction set.
+          type: string
+          enum:
+            - schema
+            - schemaProperty
+            - parameter
+            - operation
+            - pathItem
+        restrictions:
+          description: One or more SchemaRestriction objects to evaluate against the target.
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/SchemaRestriction"
+        operator:
+          description: |
+            Logical operator combining restriction results.
+            `and` — all MUST be true (default).
+            `or`  — at least one MUST be true.
+            `not` — negates the single restriction result. The `restrictions` array MUST contain
+            exactly one item. Validators MUST enforce this rule semantically.
+          type: string
+          enum: [and, or, not]
+          default: and
+
+    SchemaRestriction:
+      description: |
+        A single narrowing constraint applied to the selected target node.
+        MUST match exactly one of the nine typed subschemas (oneOf). An empty
+        object `{}` is not a valid SchemaRestriction — every subtype requires
+        at least one property (minProperties: 1).
+        MUST NOT widen the schema — for example, MUST NOT raise a `maximum`,
+        lower a `minimum`, add enum values, or remove `required` entries.
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/SchemaRestrictionAnnotation"
+        - $ref: "#/components/schemas/SchemaRestrictionAnyInstance"
+        - $ref: "#/components/schemas/SchemaRestrictionNumeric"
+        - $ref: "#/components/schemas/SchemaRestrictionString"
+        - $ref: "#/components/schemas/SchemaRestrictionArray"
+        - $ref: "#/components/schemas/SchemaRestrictionObject"
+        - $ref: "#/components/schemas/SchemaRestrictionParameter"
+        - $ref: "#/components/schemas/SchemaRestrictionOperation"
+        - $ref: "#/components/schemas/SchemaRestrictionInstancePresence"
+
+    SchemaRestrictionAnnotation:
+      description: |
+        Annotation-level restrictions applicable to any target node at runtime.
+        Based on the JSON Schema
+        [A Vocabulary for Basic Meta-Data Annotations](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-a-vocabulary-for-basic-meta).
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        deprecated:
+          type: boolean
+          description: |
+            Mark the target node as deprecated. Only `true` is a restriction option.
+            A restriction cannot un-deprecate a property.
+          enum: [ true ]
+        readOnly:
+          type: boolean
+          description: |
+            Mark the target node as read-only. Only `true` is a restriction option.
+            A restriction cannot make a read-only property writable.
+          enum: [ true ]
+        writeOnly:
+          type: boolean
+          description: |
+            Mark the target node as write-only. Only `true` is a restriction option.
+            A restriction cannot make a write-only property readable.
+          enum: [ true ]
+        default:
+          description: |
+            Default value to apply to the target node. This is an annotation,
+            not a validation constraint. The value MUST be valid against the
+            original target schema.
+          anyOf:
+            - type: string
+              maxLength: 1024
+            - type: number
+            - type: integer
+            - type: boolean
+
+    SchemaRestrictionAnyInstance:
+      description: |
+        Type, enum, and const restrictions applicable to any target instance
+        at runtime. Based on the JSON Schema
+        [Validation keywords for Any instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-any).
+        `enum` MUST be a strict subset of the original enum values; adding
+        values not present in the original is not permitted.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [boolean, object, array, number, string, integer]
+          description: |
+            Restrict the type of the value. Only applicable when the type was
+            not initially specified or matches the target's current type.
+        enum:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: |
+            Restrict allowed values to this subset of the original enum.
+            MUST be a strict subset; adding values not in the original enum
+            is not permitted.
+          items:
+            anyOf:
+              - type: string
+                maxLength: 256
+              - type: number
+              - type: integer
+              - type: boolean
+        const:
+          anyOf:
+            - type: string
+              maxLength: 1024
+            - type: number
+            - type: integer
+            - type: boolean
+          description: Force the target field to a single constant value.
+
+    SchemaRestrictionNumeric:
+      description: |
+        Narrowing constraints on numeric values. Based on the JSON Schema
+        [Validation keywords for Numeric Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-num).
+        Applied values MUST narrow the effective range: `maximum` MUST be ≤
+        the original maximum; `minimum` MUST be ≥ the original minimum.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        multipleOf:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+          description: New multipleOf must be an integer multiple of old multipleOf
+        maximum:
+          type: number
+          description: Value MUST be ≤ this number. MUST be ≤ the original maximum.
+        minimum:
+          type: number
+          description: Value MUST be ≥ this number. MUST be ≥ the original minimum.
+        exclusiveMaximum:
+          type: number
+          description: Value MUST be strictly < this number.
+        exclusiveMinimum:
+          type: number
+          description: Value MUST be strictly > this number.
+
+    SchemaRestrictionString:
+      description: |
+        Narrowing constraints on string fields (length or pattern). Based on
+        the JSON Schema
+        [Validation keywords for Strings](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-str).
+        Applied values MUST narrow the effective range: `maxLength` MUST be ≤
+        the original; `minLength` MUST be ≥ the original.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        maxLength:
+          type: integer
+          minimum: 0
+          description: Maximum string length. MUST be ≤ the original maxLength.
+        minLength:
+          type: integer
+          minimum: 0
+          description: Minimum string length. MUST be ≥ the original minLength.
+        pattern:
+          type: string
+          maxLength: 1024
+          description: Regular-expression pattern the string MUST match (tightening only).
+
+    SchemaRestrictionArray:
+      description: |
+        Narrowing constraints on array fields (size or uniqueness). Based on
+        the JSON Schema
+        [Validation keywords for Array Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-arr).
+        Applied values MUST narrow the effective range: `maxItems` MUST be ≤
+        the original; `minItems` MUST be ≥ the original.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        maxItems:
+          type: integer
+          minimum: 0
+          description: Maximum item count. MUST be ≤ the original maxItems.
+        minItems:
+          type: integer
+          minimum: 0
+          description: Minimum item count. MUST be ≥ the original minItems.
+        uniqueItems:
+          type: boolean
+          enum: [true]
+          description: |
+            When present, MUST be `true`. Enforces uniqueness on array items.
+            Setting to `false` (relaxing uniqueness) is not permitted.
+        maxContains:
+          type: integer
+          minimum: 0
+          description: Maximum count for items that match the `contains` schema.
+        minContains:
+          type: integer
+          minimum: 0
+          description: Minimum count for items that match the `contains` schema.
+
+    SchemaRestrictionObject:
+      description: |
+        Narrowing constraints on object structures. Based on the JSON Schema
+        [Validation keywords for Object Instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-obj).
+        `required` can only ADD entries that already exist in the original
+        schema's `properties` — it cannot remove existing required entries.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        maxProperties:
+          type: integer
+          minimum: 0
+          description: Maximum property count. MUST be ≤ the original maxProperties.
+        minProperties:
+          type: integer
+          minimum: 0
+          description: Minimum property count. MUST be ≥ the original minProperties.
+        required:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          description: |
+            Properties that MUST be present in valid instances. Entries MUST
+            already exist in the original schema's `properties`. This keyword
+            can only ADD to the required set — it cannot remove existing
+            required entries.
+          items:
+            type: string
+            maxLength: 256
+        dependentRequired:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: array
+            minItems: 1
+            maxItems: 50
+            uniqueItems: true
+            description: |
+              Additional properties that become required when another specified
+              property is present. Each key is the triggering property. Each
+              array value lists dependent properties that MUST also be present.
+              Triggering and dependent properties MUST already exist in the
+              original schema's properties. See
+              [`dependentRequired`](https://json-schema.org/draft/2020-12/json-schema-validation#name-validation-keywords-for-obj).
+            items:
+              type: string
+              maxLength: 256
+        excludedProperties:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          description: Properties that MUST be absent from valid instances.
+          items:
+            type: string
+            maxLength: 256
+
+    SchemaRestrictionParameter:
+      description: |
+        Narrowing constraints specific to OpenAPI Parameter Objects (e.g.,
+        query parameters). Based on the OpenAPI Parameter Object and provides
+        the ability to mandate an otherwise-optional parameter.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        allowEmptyValue:
+          type: boolean
+          enum: [ false ]
+          description: |
+            Disallows empty values for a query parameter. Only `false` is
+            permitted because allowing empty values would be a relaxation, not
+            a restriction. This restriction is only applicable to OpenAPI
+            query parameters.
+        mandatory:
+          type: boolean
+          enum: [true]
+          description: |
+            Mandates an otherwise-optional parameter. Only `true` is valid.
+            MUST NOT be applied to a parameter already marked `deprecated: true`.
+
+    SchemaRestrictionOperation:
+      description: |
+        Availability restrictions on OpenAPI Operation Objects. Marks an
+        operation as temporarily unavailable or unimplemented. This is the
+        mechanism to express "this operation is unavailable" via `update` —
+        structural removal of the operation node uses `remove: true` on the
+        enclosing RestrictiveAction.
+      type: object
+      minProperties: 1
+      maxProperties: 1
+      additionalProperties: false
+      properties:
+        notImplemented:
+          type: boolean
+          enum: [true]
+          description: |
+            Marks the operation as unimplemented. Invocation MUST return
+            501 Not Implemented. Only `true` is valid.
+        notAvailable:
+          type: boolean
+          enum: [true]
+          description: |
+            Marks the operation as temporarily unavailable. Invocation MUST
+            return 503 Service Unavailable. Only `true` is valid.
+      oneOf:
+      - required: [notImplemented]
+      - required: [notAvailable]
+
+    SchemaRestrictionInstancePresence:
+      description: |
+        Restriction that applies to the instance runtime presence of the target node.
+        `presence: true` mandates the node MUST exist (tightening);
+        `presence: false` mandates it MUST be absent (tightening). Both
+        directions are narrowing operations.
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        presence:
+          type: boolean
+          description: |
+            When `true`, at least one instance matching the target MUST be present in the
+            runtime request or response payload. When `false`, no such instance may be
+            present.

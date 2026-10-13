@@ -567,9 +567,9 @@ paths:
 components:
   securitySchemes:
     openId:
-      $ref: CAMARA_common.yaml#/components/securitySchemes/openId
+      $ref: old-CAMARA_common.yaml#/components/securitySchemes/openId
     notificationsBearerAuth:
-      $ref: CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
+      $ref: old-CAMARA_common.yaml#/components/securitySchemes/notificationsBearerAuth
   parameters:
     SubscriptionId:
       name: id
@@ -580,29 +580,29 @@ components:
       schema:
         $ref: '#/components/schemas/SubscriptionId'
     x-correlator:
-      $ref: CAMARA_common.yaml#/components/parameters/x-correlator
+      $ref: old-CAMARA_common.yaml#/components/parameters/x-correlator
     If-None-Match:
-      $ref: CAMARA_common.yaml#/components/parameters/If-None-Match
+      $ref: old-CAMARA_common.yaml#/components/parameters/If-None-Match
     If-Modified-Since:
-      $ref: CAMARA_common.yaml#/components/parameters/If-Modified-Since
+      $ref: old-CAMARA_common.yaml#/components/parameters/If-Modified-Since
     If-Match:
-      $ref: CAMARA_common.yaml#/components/parameters/If-Match
+      $ref: old-CAMARA_common.yaml#/components/parameters/If-Match
   headers:
     x-correlator:
-      $ref: CAMARA_common.yaml#/components/headers/x-correlator
+      $ref: old-CAMARA_common.yaml#/components/headers/x-correlator
     Cache-Control:
-      $ref: CAMARA_common.yaml#/components/headers/Cache-Control
+      $ref: old-CAMARA_common.yaml#/components/headers/Cache-Control
     ETag:
-      $ref: CAMARA_common.yaml#/components/headers/ETag
+      $ref: old-CAMARA_common.yaml#/components/headers/ETag
     Last-Modified:
-      $ref: CAMARA_common.yaml#/components/headers/Last-Modified
+      $ref: old-CAMARA_common.yaml#/components/headers/Last-Modified
     Accept-Patch:
-      $ref: CAMARA_common.yaml#/components/headers/Accept-Patch
+      $ref: old-CAMARA_common.yaml#/components/headers/Accept-Patch
   schemas:
     ErrorInfo:
-      $ref: CAMARA_common.yaml#/components/schemas/ErrorInfo
+      $ref: old-CAMARA_common.yaml#/components/schemas/ErrorInfo
     ResourceScopes:
-      $ref: CAMARA_common.yaml#/components/schemas/ResourceScopes
+      $ref: old-CAMARA_common.yaml#/components/schemas/ResourceScopes
     SubscriptionId:
       type: string
       description: |
@@ -1155,9 +1155,9 @@ components:
         - ACCESS_TOKEN_EXPIRED
   responses:
     Generic304:
-      $ref: CAMARA_common.yaml#/components/responses/Generic304
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic304
     Generic400:
-      $ref: CAMARA_common.yaml#/components/responses/Generic400
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic400
     CreateSubscriptionBadRequest400:
       description: Problem with the client request.
       headers:
@@ -1245,9 +1245,9 @@ components:
                 code: INVALID_ARGUMENT
                 message: 'Expected property is missing: subscriptionId'
     Generic401:
-      $ref: CAMARA_common.yaml#/components/responses/Generic401
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic401
     Generic403:
-      $ref: CAMARA_common.yaml#/components/responses/Generic403
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic403
     SubscriptionPermissionDenied403:
       description: Client does not have sufficient permission.
       headers:
@@ -1278,15 +1278,15 @@ components:
                 code: SUBSCRIPTION_MISMATCH
                 message: Inconsistent access token for requested events subscription.
     Generic404:
-      $ref: CAMARA_common.yaml#/components/responses/Generic404
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic404
     Generic409:
-      $ref: CAMARA_common.yaml#/components/responses/Generic409
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic409
     Generic410:
-      $ref: CAMARA_common.yaml#/components/responses/Generic410
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic410
     Generic412:
-      $ref: CAMARA_common.yaml#/components/responses/Generic412
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic412
     Generic415:
-      $ref: CAMARA_common.yaml#/components/responses/Generic415
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic415
     CreateSubscriptionUnprocessableEntity422:
       description: Unprocessable Entity
       headers:
@@ -1394,4 +1394,4 @@ components:
                 code: SEMANTIC_RULE_VIOLATED
                 message: Semantic rule violated.
     Generic429:
-      $ref: CAMARA_common.yaml#/components/responses/Generic429
+      $ref: old-CAMARA_common.yaml#/components/responses/Generic429

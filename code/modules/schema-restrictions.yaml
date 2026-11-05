@@ -1,7 +1,20 @@
-
+# Hand-authored YAML module defining the SchemaRestrictions narrowing-only
+# vocabulary used by CAMARA APIs that enforce restriction-only overlay
+# semantics (see effective-capabilities-and-restrictions).
+#
+# SCOPE: this file is Overlay-version-agnostic. The vocabulary describes what
+# may appear in the `update` field of a restrictive action regardless of
+# whether the surrounding overlay document conforms to Overlay 1.0.0, 1.1.0,
+# or a future version. Overlay-version-specific constraints (pinning the
+# `overlay` field value, forbidding `copy`) are the responsibility of the
+# consuming API's local RestrictiveAction and RestrictiveOverlay schemas.
+#
+# This file MUST NOT be modified to encode API-specific semantics. It is a
+# shared vocabulary module. To adopt a newer vocabulary version, create a
+# sibling file rather than editing this one.
 openapi: 3.0.3
 info:
-  title: CAMARA Schema Restrictions Vocabulary 1.1.2
+  title: CAMARA Schema Restrictions Vocabulary 2.0.0
   description: |
     Defines the closed, narrowing-only vocabulary for the `update` field of
     a CAMARA restrictive overlay action. Every validation restriction in this
@@ -9,58 +22,39 @@ info:
     restrictions do not widen the target schema and MUST NOT contradict the
     original target schema.
 
-    ## Changes from 1.0.0
-
-    1. Added `additionalProperties: false` to `SchemaRestrictions`.
-    2. Added clarification to operator 'not' that restrictions array contains only one
-    value. Validators MUST enforce this rule semantically.
-    3. Updated restrictions text on valid SchemaRestrictions restrictions array entries to avoid value / property smuggling.
-    4. Rename SchemaRestrictionMeta to SchemaRestrictionAnnotation for accuracy
-    5. Constrained readOnly, writeOnly and deprecated to only 'true' values.  Allowing a true to false transition is not a restriction.
-    6. Added scalar type support for `enum`, `const`, and `default`.
-    7. Renamed SchemaRestrictionPresence to SchemaRestrictionInstancePresence
-    8. Made operation restrictions mutually exclusive
-    9. Restricted `allowEmptyValue` to `false` to ensure only actionable restrictions are captured.
-    10. Added support for `multipleOf` values below 1.
-    11. `SchemaRestriction` uses `oneOf` (not `anyOf`): a restriction object
-        must match exactly one subtype. This prevents ambiguous objects that
-        simultaneously satisfy multiple subtypes from passing validation.
-    12. Every subtype adds `minProperties: 1`: an empty `{}` object no longer
-        validates as a `SchemaRestriction`. Every restriction must carry at
-        least one keyword.
-
     ## Entry point
 
     Consuming APIs reference `SchemaRestrictions` as the value type for
     `RestrictiveAction.update.additionalProperties`. `SchemaRestrictions`
     composes one or more `SchemaRestriction` objects via a logical operator
     (`and`, `or`, or `not`). Each `SchemaRestriction` resolves via `oneOf`
-    to exactly one of the nine typed subschemas below.
+    (disambiguated by its required `kind` discriminator) to exactly one of
+    the nine typed subschemas below.
 
     ## Restriction subtypes
 
-    | Schema | Applies to | Keywords |
-    |---|---|---|
-    | `SchemaRestrictionAnnotation` | any node | deprecated, readOnly, writeOnly, default |
-    | `SchemaRestrictionAnyInstance` | any node | type, enum (strict subset), const |
-    | `SchemaRestrictionNumeric` | number/integer | maximum, minimum, exclusiveMaximum, exclusiveMinimum, multipleOf |
-    | `SchemaRestrictionString` | string | maxLength, minLength, pattern |
-    | `SchemaRestrictionArray` | array | maxItems, minItems, uniqueItems (true only), maxContains, minContains |
-    | `SchemaRestrictionObject` | object | maxProperties, minProperties, required (add-only), dependentRequired, excludedProperties |
-    | `SchemaRestrictionParameter` | OAS Parameter Object | allowEmptyValue, mandatory (true only) |
-    | `SchemaRestrictionOperation` | OAS Operation Object | notImplemented (true only), notAvailable (true only) |
-    | `SchemaRestrictionInstancePresence` | any node | presence (true = must exist, false = must be absent) |
+    | Schema | `kind` value | Applies to | Keywords |
+    |---|---|---|---|
+    | `SchemaRestrictionAnnotation` | `SchemaRestrictionAnnotation` | any node | deprecated, readOnly, writeOnly, default |
+    | `SchemaRestrictionAnyInstance` | `SchemaRestrictionAnyInstance` | any node | type, enum (strict subset), const |
+    | `SchemaRestrictionNumeric` | `SchemaRestrictionNumeric` | number/integer | maximum, minimum, exclusiveMaximum, exclusiveMinimum, multipleOf |
+    | `SchemaRestrictionString` | `SchemaRestrictionString` | string | maxLength, minLength, pattern |
+    | `SchemaRestrictionArray` | `SchemaRestrictionArray` | array | maxItems, minItems, uniqueItems (true only), maxContains, minContains |
+    | `SchemaRestrictionObject` | `SchemaRestrictionObject` | object | maxProperties, minProperties, required (add-only), dependentRequired, excludedProperties |
+    | `SchemaRestrictionParameter` | `SchemaRestrictionParameter` | OAS Parameter Object | allowEmptyValue, mandatory (true only) |
+    | `SchemaRestrictionOperation` | `SchemaRestrictionOperation` | OAS Operation Object | notImplemented (true only), notAvailable (true only) |
+    | `SchemaRestrictionInstancePresence` | `SchemaRestrictionInstancePresence` | any node | presence (true = must exist, false = must be absent) |
 
     ## Versioning
 
-    This file is frozen at version 1.1.2. A new restriction type is a
+    This file is frozen at version 2.0.0. A new restriction type is a
     minor addition; a redefinition of an existing subtype's semantics is a
     major change. Either requires a new sibling file
-    (`schema-restrictions-1.2.0.yaml` or `schema-restrictions-2.0.0.yaml`).
+    (`schema-restrictions-2.1.0.yaml` or `schema-restrictions-3.0.0.yaml`).
     Consuming APIs pin their `$ref` to the versioned filename and therefore
     never silently inherit vocabulary changes.
 
-  version: 1.1.2
+  version: 2.0.0
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -72,16 +66,12 @@ components:
 
     SchemaRestrictions:
       description: |
-        A named set of schema constraints evaluated against a single target
-        node in the OpenAPI document.
-        `restrictions` — one or more `SchemaRestriction` objects, each
-          returning a boolean result when applied to the target.
-
-        Each entry in the `restrictions` array MUST be independently
-        target-aware valid and subset-preserving relative to the same target
-        node. A restriction entry that would widen the target schema, rely on
-        another entry to become valid, or admit any value not admitted by the
-        original target schema MUST be rejected.
+        A named set of one or more narrowing restrictions applied to a single
+        target node in the OpenAPI document, combined with a logical `operator`.
+        Each entry in `restrictions` MUST narrow the target on its own: an entry
+        that would widen the target schema, depend on another entry to become
+        valid, or admit a value the original target schema does not admit MUST
+        be rejected.
 
         `operator` — logical combinator:
         - `and` combines valid restrictions by intersection.
@@ -129,12 +119,28 @@ components:
     SchemaRestriction:
       description: |
         A single narrowing constraint applied to the selected target node.
-        MUST match exactly one of the nine typed subschemas (oneOf). An empty
-        object `{}` is not a valid SchemaRestriction — every subtype requires
-        at least one property (minProperties: 1).
+        MUST match exactly one of the nine typed subschemas (oneOf),
+        disambiguated by the required `kind` discriminator property — every
+        subtype requires `kind` to be present and set to its own schema name.
+        An empty object `{}` is not a valid SchemaRestriction — every subtype
+        requires at least `kind` plus one restriction property
+        (minProperties: 2, which `kind` alone does not satisfy since `kind`
+        is required in addition to it).
         MUST NOT widen the schema — for example, MUST NOT raise a `maximum`,
         lower a `minimum`, add enum values, or remove `required` entries.
       type: object
+      discriminator:
+        propertyName: kind
+        mapping:
+          SchemaRestrictionAnnotation: '#/components/schemas/SchemaRestrictionAnnotation'
+          SchemaRestrictionAnyInstance: '#/components/schemas/SchemaRestrictionAnyInstance'
+          SchemaRestrictionNumeric: '#/components/schemas/SchemaRestrictionNumeric'
+          SchemaRestrictionString: '#/components/schemas/SchemaRestrictionString'
+          SchemaRestrictionArray: '#/components/schemas/SchemaRestrictionArray'
+          SchemaRestrictionObject: '#/components/schemas/SchemaRestrictionObject'
+          SchemaRestrictionParameter: '#/components/schemas/SchemaRestrictionParameter'
+          SchemaRestrictionOperation: '#/components/schemas/SchemaRestrictionOperation'
+          SchemaRestrictionInstancePresence: '#/components/schemas/SchemaRestrictionInstancePresence'
       oneOf:
         - $ref: "#/components/schemas/SchemaRestrictionAnnotation"
         - $ref: "#/components/schemas/SchemaRestrictionAnyInstance"
@@ -152,9 +158,14 @@ components:
         Based on the JSON Schema
         [A Vocabulary for Basic Meta-Data Annotations](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-a-vocabulary-for-basic-meta).
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionAnnotation]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionAnnotation.
         deprecated:
           type: boolean
           description: |
@@ -183,6 +194,9 @@ components:
               maxLength: 1024
             - type: number
             - type: integer
+              format: int64
+              minimum: -9007199254740991
+              maximum: 9007199254740991
             - type: boolean
 
     SchemaRestrictionAnyInstance:
@@ -193,9 +207,14 @@ components:
         `enum` MUST be a strict subset of the original enum values; adding
         values not present in the original is not permitted.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionAnyInstance]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionAnyInstance.
         type:
           type: string
           enum: [boolean, object, array, number, string, integer]
@@ -212,11 +231,15 @@ components:
             MUST be a strict subset; adding values not in the original enum
             is not permitted.
           items:
+            description: A value that remains allowed for the target node; it MUST be one of the values in the original enum.
             anyOf:
               - type: string
                 maxLength: 256
               - type: number
               - type: integer
+                format: int64
+                minimum: -9007199254740991
+                maximum: 9007199254740991
               - type: boolean
         const:
           anyOf:
@@ -224,6 +247,9 @@ components:
               maxLength: 1024
             - type: number
             - type: integer
+              format: int64
+              minimum: -9007199254740991
+              maximum: 9007199254740991
             - type: boolean
           description: Force the target field to a single constant value.
 
@@ -234,9 +260,14 @@ components:
         Applied values MUST narrow the effective range: `maximum` MUST be ≤
         the original maximum; `minimum` MUST be ≥ the original minimum.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionNumeric]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionNumeric.
         multipleOf:
           type: number
           minimum: 0
@@ -263,17 +294,26 @@ components:
         Applied values MUST narrow the effective range: `maxLength` MUST be ≤
         the original; `minLength` MUST be ≥ the original.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionString]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionString.
         maxLength:
           type: integer
+          format: int32
           minimum: 0
-          description: Maximum string length. MUST be ≤ the original maxLength.
+          maximum: 4096
+          description: Maximum string length. MUST be ≤ the original maxLength. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
         minLength:
           type: integer
+          format: int32
           minimum: 0
-          description: Minimum string length. MUST be ≥ the original minLength.
+          maximum: 4096
+          description: Minimum string length. MUST be ≥ the original minLength. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
         pattern:
           type: string
           maxLength: 1024
@@ -287,17 +327,26 @@ components:
         Applied values MUST narrow the effective range: `maxItems` MUST be ≤
         the original; `minItems` MUST be ≥ the original.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionArray]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionArray.
         maxItems:
           type: integer
+          format: int32
           minimum: 0
-          description: Maximum item count. MUST be ≤ the original maxItems.
+          maximum: 4096
+          description: Maximum item count. MUST be ≤ the original maxItems. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
         minItems:
           type: integer
+          format: int32
           minimum: 0
-          description: Minimum item count. MUST be ≥ the original minItems.
+          maximum: 4096
+          description: Minimum item count. MUST be ≥ the original minItems. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
         uniqueItems:
           type: boolean
           enum: [true]
@@ -306,12 +355,16 @@ components:
             Setting to `false` (relaxing uniqueness) is not permitted.
         maxContains:
           type: integer
+          format: int32
           minimum: 0
-          description: Maximum count for items that match the `contains` schema.
+          maximum: 4096
+          description: Maximum count for items that match the `contains` schema. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
         minContains:
           type: integer
+          format: int32
           minimum: 0
-          description: Minimum count for items that match the `contains` schema.
+          maximum: 4096
+          description: Minimum count for items that match the `contains` schema. The upper bound of this property (4096) is a limit of this vocabulary, not of the target schema.
 
     SchemaRestrictionObject:
       description: |
@@ -320,17 +373,26 @@ components:
         `required` can only ADD entries that already exist in the original
         schema's `properties` — it cannot remove existing required entries.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionObject]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionObject.
         maxProperties:
           type: integer
+          format: int32
           minimum: 0
-          description: Maximum property count. MUST be ≤ the original maxProperties.
+          maximum: 128
+          description: Maximum property count. MUST be ≤ the original maxProperties. The upper bound of this property (128) is a limit of this vocabulary, not of the target schema.
         minProperties:
           type: integer
+          format: int32
           minimum: 0
-          description: Minimum property count. MUST be ≥ the original minProperties.
+          maximum: 128
+          description: Minimum property count. MUST be ≥ the original minProperties. The upper bound of this property (128) is a limit of this vocabulary, not of the target schema.
         required:
           type: array
           minItems: 1
@@ -344,6 +406,7 @@ components:
           items:
             type: string
             maxLength: 256
+            description: Name of a property that becomes mandatory; it MUST already be defined in the original schema's properties.
         dependentRequired:
           type: object
           minProperties: 1
@@ -362,6 +425,7 @@ components:
             items:
               type: string
               maxLength: 256
+              description: Name of a property that becomes mandatory whenever the triggering property is present.
         excludedProperties:
           type: array
           minItems: 1
@@ -371,6 +435,7 @@ components:
           items:
             type: string
             maxLength: 256
+            description: Name of a property that MUST be absent from valid instances.
 
     SchemaRestrictionParameter:
       description: |
@@ -378,9 +443,14 @@ components:
         query parameters). Based on the OpenAPI Parameter Object and provides
         the ability to mandate an otherwise-optional parameter.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionParameter]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionParameter.
         allowEmptyValue:
           type: boolean
           enum: [ false ]
@@ -403,11 +473,19 @@ components:
         mechanism to express "this operation is unavailable" via `update` —
         structural removal of the operation node uses `remove: true` on the
         enclosing RestrictiveAction.
+
+        Exactly one of `notImplemented` and `notAvailable` MUST be present
+        besides `kind`.
       type: object
-      minProperties: 1
-      maxProperties: 1
+      minProperties: 2
+      maxProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionOperation]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionOperation.
         notImplemented:
           type: boolean
           enum: [true]
@@ -420,9 +498,6 @@ components:
           description: |
             Marks the operation as temporarily unavailable. Invocation MUST
             return 503 Service Unavailable. Only `true` is valid.
-      oneOf:
-      - required: [notImplemented]
-      - required: [notAvailable]
 
     SchemaRestrictionInstancePresence:
       description: |
@@ -431,9 +506,14 @@ components:
         `presence: false` mandates it MUST be absent (tightening). Both
         directions are narrowing operations.
       type: object
-      minProperties: 1
+      minProperties: 2
       additionalProperties: false
+      required: [kind]
       properties:
+        kind:
+          type: string
+          enum: [SchemaRestrictionInstancePresence]
+          description: Discriminator tag identifying this restriction as a SchemaRestrictionInstancePresence.
         presence:
           type: boolean
           description: |

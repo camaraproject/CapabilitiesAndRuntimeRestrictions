@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Effective Capabilities and Restrictions 1.1.0-v3
+  title: Effective Capabilities and Restrictions
   description: |
     The Effective Capabilities and Restrictions API lets an API Consumer
     discover, before invocation, the effective capability set that a producer
@@ -64,12 +64,15 @@ info:
     by this API. An action is restrictive when it either:
 
     - sets `remove: true` to delete an existing node from the target document, or
-    - sets `update: { ... }` whose top-level keys narrow the target node using
-      JSON Schema validation keywords — for example, an `enum` that is a strict
-      subset of the existing enum, a lowered `maximum`/`maxLength`/`maxItems`,
+    - sets `update` to a map of named restriction sets. Each set is a
+      `SchemaRestrictions` object whose `restrictions[]` narrow the target node
+      with `kind`-tagged restrictions — for example, an `enum` listing only
+      values the target already admits (a strict subset when the target
+      defines an `enum`), a lowered `maximum`/`maxLength`/`maxItems`,
       a raised `minimum`/`minLength`/`minItems`, a tightened `pattern`, a
-      `uniqueItems: true` constraint, or a `required` array that adds
-      previously-optional properties.
+      `uniqueItems: true` constraint, a `required` array that adds
+      previously-optional properties, or a runtime directive such as
+      `notAvailable: true` or `presence: false`.
 
     **Structural enforcement**: restriction-only semantics are enforced at the
     schema level by the `RestrictiveAction` and `SchemaRestrictions` schemas,
@@ -87,13 +90,14 @@ info:
       a valid `update`.
     - `remove` is constrained to `enum: [true]` — only structural removal is
       expressible; `remove: false` (a no-op) is rejected.
-    - `oneOf: [required: [remove], required: [update]]` on `RestrictiveAction`
-      enforces that exactly one mutating field is present per action; an action
-      with both or neither fails validation.
+    - Two `not` clauses under `allOf` on `RestrictiveAction` enforce that
+      exactly one mutating field is present per action; an action with both
+      or neither fails validation. The optional, informational `description`
+      does not count as a mutating field.
 
     Each `RestrictiveAction` MUST carry exactly one of `remove: true` or
     `update`. Co-presence of both, or presence of neither, fails schema
-    validation (`oneOf` constraint on `RestrictiveAction`). Unlike raw
+    validation (the `not` constraints on `RestrictiveAction`). Unlike raw
     Overlay 1.1.0 — which allows co-presence and resolves it by precedence —
     this API treats co-presence as a producer error, not a tie-break.
 
@@ -102,15 +106,181 @@ info:
     introduce new `oneOf` branches, raise a `maximum`, lower a `required`
     array, or otherwise relax the contract of the underlying CAMARA API.
 
+    # Applying a restrictive overlay
+
+    A `RestrictiveOverlay` is not a stock Overlay document: each `update` value
+    is a `SchemaRestrictions` object, not a JSON fragment to merge. Do not use
+    a generic Overlay processor. An API Consumer applies an overlay as follows.
+
+    **Inputs.** The overlay, and the upstream CAMARA API specification that its
+    `extends` URL identifies (the same URL as the entry in `apis[]`, or
+    `data.api` in a notification). The effective contract is that specification
+    narrowed by the overlay. Anything the overlay does not target is supported
+    with its unmodified CAMARA semantics.
+
+    **Steps.**
+
+    1. Check that `overlay` is `"1.1.0"` and that `extends` is one of the
+       requested APIs. Reject an overlay that broadens the specification, as
+       stated in "Restriction-only semantics".
+    2. Process `actions[]` in the order given. Evaluate each `target` as
+       described in "Target expressions" below to select nodes. A target that
+       selects no node is an error: reject the overlay.
+    3. If the action has `remove: true`, treat the selected nodes as absent
+       everywhere the application reads them. Removed nodes are also absent
+       for the evaluation of every later `target`.
+    4. If the action has `update`, apply every named set it contains. The name
+       is a label chosen by the producer and has no meaning; read all sets, do
+       not look one up by name. In each set, take the subtype of each
+       restriction from its `kind` value, and evaluate `restrictions[]` with
+       `operator`:
+       - `and` (default): every restriction applies.
+       - `or`: at least one restriction applies.
+       - `not`: the single restriction does not apply. A `not` restriction is
+         valid only where it can be shown to narrow the target; reject any
+         overlay that carries a `not` restriction you cannot show to narrow.
+    5. Combine all restrictions that reach the same node, from any set or
+       action: they apply together, and the result is never wider than the
+       upstream specification. For `required`, the effective required set is
+       the original set plus every name added by a `required` restriction.
+    6. When a notification arrives, replace the whole cached overlay for
+       `data.api` with `data.overlay` and apply it again. Do not compute
+       differences.
+
+    **Target expressions.** Every API Consumer must select the same nodes for
+    the same overlay, so targets are evaluated as follows.
+
+    - A `target` is a JSONPath expression as defined by RFC 9535, which
+      Overlay 1.1.0 uses. Implementations MUST use an RFC 9535-conformant
+      evaluator. Several widely used JSONPath libraries implement earlier
+      dialects and evaluate filter selectors differently, in some cases
+      returning no node without an error.
+    - A `target` is evaluated against the upstream specification exactly as
+      published at the `extends` URL. `$ref` is not resolved during
+      evaluation: to restrict a schema reached through `$ref`, target the
+      referenced component.
+    - Only `remove` actions change the document seen by later targets. An
+      `update` action attaches restrictions to the selected nodes; it does not
+      change the document against which later targets are evaluated.
+    - A target that selects several nodes applies to each of them. A
+      restriction on a node under `components` applies wherever that node is
+      referenced, in requests and in responses.
+
+    API Producers SHOULD write targets as follows, so that targets stay
+    readable and keep selecting the intended node across releases of the
+    upstream specification:
+
+    - Use name selectors wherever they reach the node, for example
+      `$.components.schemas.SinkCredential.properties.credentialType`.
+    - Use a filter selector only to cross an array, in the form
+      `[?@.<member>]` or `[?@.<member>=='<value>']`, for example
+      `$.components.schemas.CreateSession.allOf[?@.properties.duration].properties.duration`.
+      To select an array element by the value of `$ref`, write the member
+      name in brackets, because `$` cannot start a member-name shorthand:
+      `$.components.schemas.AccessDetail.oneOf[?@['$ref']=='#/components/schemas/ThreadTlvAccessDetail']`.
+    - Do not use index or slice selectors (such as `allOf[2]`), which select
+      by position, or descendant (`..`) and wildcard (`*`) selectors, which
+      can select more nodes than intended.
+    - Know how many nodes each target selects, normally exactly one, and
+      check it before emitting the overlay.
+
+    **Effect of each restriction subtype.** Every restriction object has a
+    required `kind` property whose value is the subtype name; it selects the
+    row below.
+
+    | Subtype (value of `kind`) | Keywords | Effect for the API Consumer |
+    |---|---|---|
+    | `SchemaRestrictionAnnotation` | `deprecated`, `readOnly`, `writeOnly` (only `true`), `default` | Mark the field accordingly; `default` is a value to pre-fill and must still be valid for the field. |
+    | `SchemaRestrictionAnyInstance` | `type`, `enum`, `const` | `enum`: offer only the listed values and clear a selection that is no longer listed. `const`: the field has one fixed value. `type`: the accepted JSON type has narrowed. |
+    | `SchemaRestrictionNumeric` | `maximum`, `minimum`, `exclusiveMaximum`, `exclusiveMinimum`, `multipleOf` | Tighten the bounds or step; bring an entered value into the new range. |
+    | `SchemaRestrictionString` | `maxLength`, `minLength`, `pattern` | Tighten the length limits or the pattern check. |
+    | `SchemaRestrictionArray` | `maxItems`, `minItems`, `uniqueItems`, `maxContains`, `minContains` | Tighten the item count; with `uniqueItems`, do not allow duplicates. |
+    | `SchemaRestrictionObject` | `maxProperties`, `minProperties`, `required`, `dependentRequired`, `excludedProperties` | `required`: the named properties are mandatory. `excludedProperties`: omit these properties from the request body. |
+    | `SchemaRestrictionParameter` | `allowEmptyValue` (only `false`), `mandatory` (only `true`) | The parameter can no longer be empty, or is now required. |
+    | `SchemaRestrictionOperation` | `notImplemented`, `notAvailable` (only `true`) | Do not call the operation. The operation stays in the document; `notImplemented` and `notAvailable` correspond to `501` and `503` if it is called anyway. |
+    | `SchemaRestrictionInstancePresence` | `presence` | Runtime directive about request and response instances: with `false`, omit the field from the outgoing body even though the schema node exists. |
+
+    **Example.** A request for one API, without `sink`, for one device:
+
+    ```json
+    {
+      "apis": [
+        "https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml"
+      ],
+      "device": { "phoneNumber": "+123456788" }
+    }
+    ```
+
+    Response `200 OK` (each target selects exactly one node in the referenced
+    release of Quality on Demand):
+
+    ```json
+    [
+      {
+        "overlay": "1.1.0",
+        "info": { "title": "QoD effective restrictions", "version": "1" },
+        "extends": "https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml",
+        "actions": [
+          {
+            "target": "$.components.schemas.SinkCredential.properties.credentialType",
+            "description": "Notification sinks accept access-token credentials only",
+            "update": {
+              "sinkAuth": {
+                "targetKind": "schemaProperty",
+                "restrictions": [ { "kind": "SchemaRestrictionAnyInstance", "enum": ["ACCESSTOKEN"] } ]
+              }
+            }
+          },
+          {
+            "target": "$.components.schemas.CreateSession.allOf[?@.properties.duration].properties.duration",
+            "description": "Cap the requested session duration at one hour",
+            "update": {
+              "durationCap": {
+                "targetKind": "schemaProperty",
+                "restrictions": [ { "kind": "SchemaRestrictionNumeric", "maximum": 3600 } ]
+              }
+            }
+          },
+          {
+            "target": "$.paths['/sessions/{sessionId}/extend']",
+            "description": "Session extension is not offered for this device",
+            "remove": true
+          }
+        ]
+      }
+    ]
+    ```
+
+    Applying it gives the effective contract for this device:
+
+    - `credentialType` in a sink credential accepts only `ACCESSTOKEN`. A
+      form for registering a notification sink offers only access-token
+      credentials.
+    - `duration` in a session creation request is at most 3600. A larger value
+      entered by the user is brought down to 3600. The filter selector
+      `[?@.properties.duration]` selects the `allOf` branch of `CreateSession`
+      that defines `duration`, whatever its position.
+    - The `/sessions/{sessionId}/extend` path is treated as absent, so the
+      application does not offer that action.
+
+    Each `description` states the producer's intent for a human reader; it
+    has no effect on how the action is applied.
+
+    Everything else in the upstream specification is supported unchanged.
+
+
     # Operation model
 
     The single operation `POST /retrieve-effective-overlay` accepts a list of
-    CAMARA API specification URLs (released GitHub versions) and a `device`
-    context. The returned overlay for each API reflects the **union of static
-    and runtime restrictions**: static restrictions are producer-wide and apply
-    regardless of the device supplied; runtime restrictions are additionally
-    conditioned on the device's footprint, subscription tier, or network
-    attachment. Consumers MUST NOT assume that all restrictions in a returned
+    CAMARA API specification URLs (released GitHub versions) and an optional
+    `device` context. When `device` is supplied, the returned overlay for each
+    API reflects the **union of static and runtime restrictions**: static
+    restrictions are producer-wide and apply regardless of the device
+    supplied; runtime restrictions are additionally conditioned on the
+    device's footprint, subscription tier, or network attachment. When
+    `device` is omitted, the returned overlay contains **only the static,
+    producer-wide restrictions**. The device is never derived from the access
+    token. Consumers MUST NOT assume that all restrictions in a returned
     overlay are device-specific — a restriction present regardless of which
     device is queried is a static, producer-wide constraint on the capability
     set.
@@ -118,13 +288,12 @@ info:
     The operation has two delivery modes selected by whether the request
     carries a `sink`:
 
-    - **Synchronous** (no `sink`/`sinkCredential`): the producer evaluates the
-      request and returns `200 OK` with an array of `RestrictiveOverlay`
-      documents — valid Overlay 1.1.0 documents restricted to narrowing-only
-      actions — one per requested API, in the same order as the request's
-      `apis[]`.
-    - **Asynchronous (implicit subscription)** (`sink` and `sinkCredential`
-      both present): the producer returns `202 Accepted` immediately with an
+    - **Synchronous** (no `sink`): the producer evaluates the request and
+      returns `200 OK` with an array of `RestrictiveOverlay` documents — a
+      CAMARA profile of Overlay 1.1.0 restricted to narrowing-only actions —
+      one per requested API, in the same order as the request's `apis[]`.
+    - **Asynchronous (implicit subscription)** (`sink` present, optionally
+      with `sinkCredential`): the producer returns `202 Accepted` immediately with an
       echo of the registered `sink` (never the credential), and delivers each
       computed overlay later via the sink as a single non-batch CloudEvent of
       type
@@ -177,8 +346,12 @@ info:
             |     200/201 -- no surprise 422s              |
     ```
 
-    Async variant: if the request body also carries `sink` and
-    `sinkCredential`, step (c) becomes `202 Accepted` (echoing only the
+    If the consumer has no device context, `device` is omitted in step (b);
+    the overlay then contains only static restrictions, and steps (d) to (f)
+    are unchanged.
+
+    Async variant: if the request body also carries `sink` (and optionally
+    `sinkCredential`), step (c) becomes `202 Accepted` (echoing only the
     `sink`) and the producer later POSTs `overlay-updated` CloudEvents to
     the sink — once on the initial evaluation and once on each subsequent
     effective-view change. The consumer replaces its cached overlay for
@@ -188,59 +361,92 @@ info:
     # Recovery
 
     Notification delivery is at-most-once. To recover from a missed
-    notification, a consumer simply re-issues the original
-    `POST /retrieve-effective-overlay` request: the operation is idempotent
-    and the response always reflects the producer's current effective view for
-    the supplied context. There is no bitmap, no `mappingVersion`, no resync
-    state machine.
+    notification, a consumer re-issues the original
+    `POST /retrieve-effective-overlay` request without `sink` (synchronous
+    mode): the response always reflects the producer's current effective view
+    for the supplied context. There is no bitmap, no `mappingVersion`, no
+    resync state machine.
+
+    # Lifetime of asynchronous delivery
+
+    A request with `sink` registers delivery of `overlay-updated` events. There
+    is no managed resource: the registration is identified by the API
+    Consumer, the `device` (if any), the requested API URL and the `sink`.
+
+    - **Replacement:** a repeated request with the same API Consumer, device,
+      API URL and `sink` replaces the earlier registration for that API. The
+      lifetime below starts again from the new request. It does not create a
+      duplicate registration.
+    - **End of delivery:** delivery for a registration ends at the earlier of
+      (a) the expiry of the `sinkCredential` access token
+      (`accessTokenExpiresUtc`), when the credential type has one, and (b) a
+      maximum duration defined by the API provider.
+    - **Sink gone:** if the sink responds to a notification with
+      `410 GONE`, the API provider ends delivery for that registration.
+    - No notification is sent when delivery ends. A consumer that needs to
+      keep receiving events re-issues the request before delivery ends.
+
+    # Required scope and sink authentication
+
+    The required scope for the `retrieveEffectiveOverlay` operation is
+    `effective-capabilities-and-restrictions:retrieve-effective-overlay`, which
+    grants the right to retrieve the effective overlay. Callback (`sink`)
+    authentication is conveyed out-of-band by the optional `sinkCredential`
+    supplied with the request; it is RECOMMENDED to provide one. The
+    credential itself is never echoed in any response.
+
+    <!-- CAMARA:MANDATORY:authorization-and-authentication:BEGIN -->
 
     # Authorization and authentication
 
-    The "Authorization and authentication" common guidelines, defined in
-    [Commonalities](https://github.com/camaraproject/Commonalities/blob/main/documentation/CAMARA-API-access-and-user-consent.md),
-    apply to this API. The API uses OpenID Connect (OIDC) authentication, and
-    grant management via CIBA. The required scope for the
-    `retrieveEffectiveOverlay` operation is
-    `effective-capabilities-and-restrictions:retrieve-effective-overlay`, which
-    grants the right to retrieve the effective overlay for a given device.
-    Callback (`sink`) authentication is conveyed out-of-band by the
-    `sinkCredential` supplied with the request; the credential itself is never
-    echoed in any response.
+    The "Camara Security and Interoperability Profile" provides details of how an API consumer requests an access token. Please refer to Identity and Consent Management (https://github.com/camaraproject/IdentityAndConsentManagement/) for the released version of the profile.
+
+    The specific authorization flows to be used will be agreed upon during the onboarding process, happening between the API consumer and the API provider, taking into account the declared purpose for accessing the API, whilst also being subject to the prevailing legal framework dictated by local legislation.
+
+    In cases where personal data is processed by the API and users can exercise their rights through mechanisms such as opt-in and/or opt-out, the use of three-legged access tokens is mandatory. This ensures that the API remains in compliance with privacy regulations, upholding the principles of transparency and user-centric privacy-by-design.
+    <!-- CAMARA:MANDATORY:authorization-and-authentication:END -->
+
+    <!-- CAMARA:MANDATORY:additional-error-responses:BEGIN -->
 
     # Additional CAMARA error responses
 
-    The list of error codes in this API specification is not exhaustive.
-    Therefore the API specification may not document some non-mandatory error
-    statuses such as 504 (Gateway Timeout) introduced by Commonalities.
-    Consumers MUST be prepared to handle other error responses than those
-    listed here. Where appropriate, error responses follow the standard
-    CAMARA error structure defined in `CAMARA_common.yaml`.
+    The list of error codes in this API specification is not exhaustive. Therefore the API specification MAY not document some non-mandatory error statuses as indicated in `CAMARA API Design Guide`.
+
+    Please refer to the `CAMARA_common.yaml` of the Commonalities Release associated to this API version for a complete list of error responses. The applicable Commonalities Release can be identified from the `x-camara-commonalities` field, the changelog and the metadata of the released API version.
+
+    As a specific rule, error `501 - NOT_IMPLEMENTED` can be only a possible error response if it is explicitly documented in the API.
+    <!-- CAMARA:MANDATORY:additional-error-responses:END -->
+
+    <!-- CAMARA:MANDATORY:request-body-strictness:BEGIN -->
+
+    # Request body strictness
+
+    This API rejects requests with JSON request bodies that contain properties not declared in this specification, at any nesting level. Unknown properties result in a `400 INVALID_ARGUMENT` response.
+    <!-- CAMARA:MANDATORY:request-body-strictness:END -->
 
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: wip
-  x-camara-commonalities: 0.8.0-rc.2
+  x-camara-commonalities: 0.9.0
 
 externalDocs:
   description: Product documentation at CAMARA
-  url: https://github.com/camaraproject/
+  url: https://github.com/camaraproject/CapabilitiesAndRuntimeRestrictions
 
 servers:
   - url: "{apiRoot}/effective-capabilities-and-restrictions/vwip"
     variables:
       apiRoot:
         default: http://localhost:9091
-        description: |
-          API root, defined by the service provider, e.g.
-          `api.example.com` or `api.example.com/somepath`.
+        description: API root, defined by the service provider, e.g. `api.example.com` or `api.example.com/somepath`
 
 tags:
   - name: Effective Overlay
     description: |
       Retrieve producer-specific effective overlay documents for one or more
-      CAMARA APIs in the context of a given device. Optionally subscribe to
-      overlay updates via an implicit `sink` callback.
+      CAMARA APIs, optionally in the context of a given device. Optionally
+      subscribe to overlay updates via an implicit `sink` callback.
 
 security:
   - openId:
@@ -254,30 +460,48 @@ paths:
       summary: Retrieve the effective overlay for one or more CAMARA APIs
       description: |
         Computes the producer-specific effective overlay for each CAMARA API
-        listed in `apis[]`, in the context of the supplied `device`.
+        listed in `apis[]`. If `device` is supplied, the overlay includes the
+        runtime restrictions for that device; if `device` is omitted, it
+        contains only the static, producer-wide restrictions.
 
-        - If neither `sink` nor `sinkCredential` is supplied, returns
-          `200 OK` synchronously with an array of `RestrictiveOverlay`
-          documents — valid Overlay 1.1.0 documents restricted to
-          narrowing-only actions — one per entry in `apis[]`, in the same
-          order as the request.
-        - If both `sink` and `sinkCredential` are supplied, returns
+        Use this operation when there is a need to retrieve the effective
+        overlay for one or more CAMARA APIs.
+
+        - If `sink` is not supplied, returns `200 OK` synchronously with an
+          array of `RestrictiveOverlay` documents — a CAMARA profile of
+          Overlay 1.1.0 restricted to narrowing-only actions — one per entry
+          in `apis[]`, in the same order as the request.
+        - If `sink` is supplied (optionally with `sinkCredential`), returns
           `202 Accepted` with no overlays in the body (the response echoes
           only the registered `sink`) and the producer subsequently delivers
           one CloudEvent of type
           `org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated`
           per requested API via the registered `sink`. Additional CloudEvents
           of the same type are delivered whenever the effective overlay for
-          any of the requested APIs changes.
+          any of the requested APIs changes. See the "Lifetime of
+          asynchronous delivery" section of the API description for how
+          registrations are replaced and when delivery ends.
 
-        The operation is idempotent: repeating the same request returns the
-        same effective overlay set (or schedules the same async delivery) for
-        a stable producer-side configuration. To recover from a missed
-        notification, simply re-issue the request.
+        If any URL in `apis[]` identifies a CAMARA API specification that the
+        API provider does not support, the whole request is rejected with
+        `422 EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS.API_NOT_SUPPORTED`; no
+        overlay is returned and no delivery is registered.
+
+        If `sink` is provided but the API provider does not support
+        notification delivery, the request is rejected with
+        `422 EVENT_NOTIFICATIONS_NOT_SUPPORTED` and no delivery is registered.
+        The consumer can retry without `sink` to use the synchronous mode.
+
+        Repeating a synchronous request returns the same effective overlay
+        set for a stable producer-side configuration.
       operationId: retrieveEffectiveOverlay
       parameters:
         - $ref: "../common/CAMARA_common.yaml#/components/parameters/x-correlator"
       requestBody:
+        description: |
+          List of CAMARA API specification URLs to evaluate, an optional device
+          context, and an optional `sink` (with an optional `sinkCredential`)
+          that selects asynchronous delivery.
         required: true
         content:
           application/json:
@@ -300,6 +524,7 @@ paths:
               parameters:
                 - $ref: "../common/CAMARA_common.yaml#/components/parameters/x-correlator"
               requestBody:
+                description: CloudEvent carrying the replacement overlay for one CAMARA API.
                 required: true
                 content:
                   application/cloudevents+json:
@@ -312,15 +537,15 @@ paths:
                     x-correlator:
                       $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
                 "400":
-                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic400"
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/BadRequest400"
                 "401":
-                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic401"
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/Unauthenticated401"
                 "403":
-                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic403"
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/PermissionDenied403"
                 "410":
-                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic410"
+                  $ref: "../common/CAMARA_event_common.yaml#/components/responses/SinkGone410"
                 "429":
-                  $ref: "../common/CAMARA_common.yaml#/components/responses/Generic429"
+                  $ref: "../common/CAMARA_common.yaml#/components/responses/TooManyRequests429"
               security:
                 - {}
                 - notificationsBearerAuth: []
@@ -328,12 +553,12 @@ paths:
         "200":
           description: |
             Synchronous response. The body is an array of `RestrictiveOverlay`
-            documents — valid [OpenAPI Overlay 1.1.0](https://spec.openapis.org/overlay/v1.1.0.html)
-            documents restricted to narrowing-only actions — one per entry in
+            documents — a CAMARA profile of [OpenAPI Overlay 1.1.0](https://spec.openapis.org/overlay/v1.1.0.html)
+            restricted to narrowing-only actions — one per entry in
             the request's `apis[]`, in the same order. Each document carries
             `overlay: "1.1.0"` in its root field, enforced by the
-            `RestrictiveOverlay` schema. Returned only when the request omits
-            both `sink` and `sinkCredential`.
+            `RestrictiveOverlay` schema. Returned only when the request
+            omits `sink`.
           headers:
             x-correlator:
               $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
@@ -350,10 +575,85 @@ paths:
                   actions enforced by the `RestrictiveAction` schema.
                 items:
                   $ref: "#/components/schemas/RestrictiveOverlay"
+              examples:
+                RESTRICTIONS_FOR_DEVICE:
+                  summary: Static and runtime restrictions for a device
+                  description: |
+                    Request with `device` and without `sink`. The overlay for
+                    the requested API narrows an enum, caps a numeric value and
+                    removes an operation for this device. It repeats the
+                    producer-wide restriction on `credentialType` and carries
+                    the tighter of the producer-wide and device-specific caps
+                    on `duration`.
+                  value:
+                    - overlay: "1.1.0"
+                      info:
+                        title: QoD effective restrictions
+                        version: "1"
+                      extends: https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml
+                      actions:
+                        - target: "$.components.schemas.SinkCredential.properties.credentialType"
+                          description: Notification sinks accept access-token credentials only
+                          update:
+                            sinkAuth:
+                              targetKind: schemaProperty
+                              restrictions:
+                                - kind: SchemaRestrictionAnyInstance
+                                  enum:
+                                    - ACCESSTOKEN
+                        - target: "$.components.schemas.CreateSession.allOf[?@.properties.duration].properties.duration"
+                          description: Cap the requested session duration at one hour
+                          update:
+                            durationCap:
+                              targetKind: schemaProperty
+                              restrictions:
+                                - kind: SchemaRestrictionNumeric
+                                  maximum: 3600
+                        - target: "$.paths['/sessions/{sessionId}/extend']"
+                          description: Session extension is not offered for this device
+                          remove: true
+                STATIC_RESTRICTIONS_ONLY:
+                  summary: Static, producer-wide restrictions only
+                  description: |
+                    Request without `device` and without `sink`. The overlay
+                    contains only the producer-wide restrictions.
+                  value:
+                    - overlay: "1.1.0"
+                      extends: https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml
+                      actions:
+                        - target: "$.components.schemas.SinkCredential.properties.credentialType"
+                          description: Notification sinks accept access-token credentials only
+                          update:
+                            sinkAuth:
+                              targetKind: schemaProperty
+                              restrictions:
+                                - kind: SchemaRestrictionAnyInstance
+                                  enum:
+                                    - ACCESSTOKEN
+                        - target: "$.components.schemas.CreateSession.allOf[?@.properties.duration].properties.duration"
+                          description: Producer-wide cap on the requested session duration
+                          update:
+                            durationCap:
+                              targetKind: schemaProperty
+                              restrictions:
+                                - kind: SchemaRestrictionNumeric
+                                  maximum: 86400
+                FULL_SUPPORT:
+                  summary: Full support for this device
+                  description: |
+                    Request with `device` and without `sink`. No restriction
+                    applies: the requested API is supported with unmodified
+                    CAMARA semantics for this device. An empty `actions` list
+                    is the positive answer; overlays never list what is
+                    supported.
+                  value:
+                    - overlay: "1.1.0"
+                      extends: https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml
+                      actions: []
         "202":
           description: |
-            Asynchronous acceptance. Returned only when both `sink` and
-            `sinkCredential` are present in the request. No overlays are
+            Asynchronous acceptance. Returned only when `sink` is present in
+            the request (`sinkCredential` is optional). No overlays are
             included in the body; the producer will deliver one CloudEvent
             of type
             `org.camaraproject.effective-capabilities-and-restrictions.v0.overlay-updated`
@@ -367,22 +667,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RetrieveEffectiveOverlayAccepted"
+              examples:
+                SINK_REGISTERED:
+                  summary: Asynchronous delivery accepted
+                  description: |
+                    Request with `sink`. The response echoes only the
+                    registered `sink`; the overlays are delivered later as
+                    `overlay-updated` CloudEvents.
+                  value:
+                    sink: https://app.example.com/effective-overlay/notifications
+        # 5xx statuses are not documented by default (Design Guide section 3.2.1 NOTE).
         "400":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic400"
+          $ref: "#/components/responses/RetrieveEffectiveOverlayBadRequest400"
         "401":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic401"
+          $ref: "../common/CAMARA_common.yaml#/components/responses/Unauthenticated401"
         "403":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic403"
+          $ref: "../common/CAMARA_common.yaml#/components/responses/PermissionDenied403"
         "404":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic404"
+          $ref: "../common/CAMARA_common.yaml#/components/responses/IdentifierNotFound404"
         "422":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic422"
+          description: Unprocessable Content
+          headers:
+            x-correlator:
+              $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "../common/CAMARA_common.yaml#/components/schemas/ErrorInfo"
+                  - type: object
+                    properties:
+                      status:
+                        enum:
+                          - 422
+                      code:
+                        enum:
+                          - UNSUPPORTED_IDENTIFIER
+                          - SERVICE_NOT_APPLICABLE
+                          - PRIVATE_KEY_JWT_NOT_CONFIGURED
+                          - EVENT_NOTIFICATIONS_NOT_SUPPORTED
+                          - EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS.API_NOT_SUPPORTED
+              examples:
+                GENERIC_422_UNSUPPORTED_IDENTIFIER_DEVICE:
+                  $ref: "../common/CAMARA_common.yaml#/components/examples/GENERIC_422_UNSUPPORTED_IDENTIFIER_DEVICE"
+                GENERIC_422_SERVICE_NOT_APPLICABLE:
+                  $ref: "../common/CAMARA_common.yaml#/components/examples/GENERIC_422_SERVICE_NOT_APPLICABLE"
+                GENERIC_422_PRIVATE_KEY_JWT_NOT_CONFIGURED:
+                  $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_422_PRIVATE_KEY_JWT_NOT_CONFIGURED"
+                GENERIC_422_EVENT_NOTIFICATIONS_NOT_SUPPORTED:
+                  $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_422_EVENT_NOTIFICATIONS_NOT_SUPPORTED"
+                EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS_API_NOT_SUPPORTED:
+                  $ref: "#/components/examples/EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS_API_NOT_SUPPORTED"
         "429":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic429"
-        "500":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic500"
-        "503":
-          $ref: "../common/CAMARA_common.yaml#/components/responses/Generic503"
+          $ref: "../common/CAMARA_common.yaml#/components/responses/TooManyRequests429"
 
 components:
   securitySchemes:
@@ -391,92 +728,55 @@ components:
     notificationsBearerAuth:
       $ref: "../common/CAMARA_event_common.yaml#/components/securitySchemes/notificationsBearerAuth"
 
+  responses:
+    RetrieveEffectiveOverlayBadRequest400:
+      description: Problem with the client request
+      headers:
+        x-correlator:
+          $ref: "../common/CAMARA_common.yaml#/components/headers/x-correlator"
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "../common/CAMARA_common.yaml#/components/schemas/ErrorInfo"
+              - type: object
+                properties:
+                  status:
+                    enum:
+                      - 400
+                  code:
+                    enum:
+                      - INVALID_ARGUMENT
+                      - INVALID_PROTOCOL
+                      - INVALID_CREDENTIAL
+                      - INVALID_TOKEN
+                      - INVALID_SINK
+          examples:
+            GENERIC_400_INVALID_ARGUMENT:
+              $ref: "../common/CAMARA_common.yaml#/components/examples/GENERIC_400_INVALID_ARGUMENT"
+            GENERIC_400_INVALID_PROTOCOL:
+              $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_400_INVALID_PROTOCOL"
+            GENERIC_400_INVALID_CREDENTIAL:
+              $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_400_INVALID_CREDENTIAL"
+            GENERIC_400_INVALID_TOKEN:
+              $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_400_INVALID_TOKEN"
+            GENERIC_400_INVALID_SINK:
+              $ref: "../common/CAMARA_event_common.yaml#/components/examples/GENERIC_400_INVALID_SINK"
+
+  examples:
+    EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS_API_NOT_SUPPORTED:
+      summary: Requested CAMARA API not supported
+      description: |
+        At least one URL in `apis[]` identifies a CAMARA API specification that
+        the API provider does not support. The whole request is rejected and
+        no overlay is returned.
+      value:
+        status: 422
+        code: EFFECTIVE_CAPABILITIES_AND_RESTRICTIONS.API_NOT_SUPPORTED
+        message: At least one of the requested CAMARA API specifications is not supported by this API provider.
+
+
   schemas:
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Device (inline)
-    #
-    # Inlined per design contract: this API exposes `device` as its sole wire
-    # context input. The shape mirrors the canonical CAMARA Device but is
-    # declared locally with no $refs to ../common so the wire contract for
-    # this API is fully self-contained.
-    # ─────────────────────────────────────────────────────────────────────────
-
-    Device:
-      description: |
-        End-user equipment able to connect to a mobile network. Examples
-        include smartphones and IoT sensors/actuators.
-
-        The API Consumer can provide one or more of the following identifiers
-        and the API Producer will use one identifier of its choice for the
-        producer-side policy evaluation:
-          - `phoneNumber`
-          - `networkAccessIdentifier`
-          - `ipv4Address`
-          - `ipv6Address`
-
-        At least one identifier MUST be present.
-      type: object
-      minProperties: 1
-      properties:
-        phoneNumber:
-          type: string
-          pattern: '^\+[1-9][0-9]{4,14}$'
-          maxLength: 16
-          description: |
-            A public identifier addressing a telephone subscription. In mobile
-            networks it corresponds to the MSISDN, formatted in international
-            E.164 form prefixed with `+`.
-          example: "+123456789"
-        networkAccessIdentifier:
-          type: string
-          maxLength: 2048
-          description: |
-            A public identifier addressing a subscription in a mobile network.
-            In 3GPP terminology, it corresponds to the GPSI formatted with the
-            External Identifier (`{Local Identifier}@{Domain Identifier}`).
-          example: "123456789@example.com"
-        ipv4Address:
-          $ref: "#/components/schemas/DeviceIpv4Address"
-        ipv6Address:
-          type: string
-          format: ipv6
-          maxLength: 45
-          description: |
-            The device should be identified by the observed IPv6 address, or
-            by any single IPv6 address from within the subnet allocated to the
-            device.
-          example: "2001:db8:85a3:8d3:1319:8a2e:370:7344"
-
-    DeviceIpv4Address:
-      description: |
-        The device IPv4 identification. `publicAddress` MUST always be present;
-        in addition, at least one of `privateAddress` or `publicPort` MUST be
-        present so the device can be uniquely identified through NAT.
-      type: object
-      properties:
-        publicAddress:
-          type: string
-          format: ipv4
-          maxLength: 15
-          description: A single public (observed) IPv4 address.
-          example: "84.125.93.10"
-        privateAddress:
-          type: string
-          format: ipv4
-          maxLength: 15
-          description: A single private (allocated) IPv4 address.
-          example: "10.0.0.5"
-        publicPort:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 65535
-          description: TCP or UDP source port observed at the application server.
-          example: 59765
-      anyOf:
-        - required: [publicAddress, privateAddress]
-        - required: [publicAddress, publicPort]
 
     # ─────────────────────────────────────────────────────────────────────────
     # Request body
@@ -485,13 +785,15 @@ components:
     RetrieveEffectiveOverlayRequest:
       description: |
         Request body for `POST /retrieve-effective-overlay`. Carries the list
-        of CAMARA APIs to evaluate, the device context, and (optionally) an
-        implicit-subscription `sink` + `sinkCredential` pair selecting
-        asynchronous delivery.
+        of CAMARA APIs to evaluate, an optional device context, and
+        (optionally) an implicit-subscription `sink`, with an optional
+        `sinkCredential`, selecting asynchronous delivery.
 
-        Either both `sink` and `sinkCredential` are present (asynchronous
-        mode, `202` response) or neither is present (synchronous mode,
-        `200` response).
+        If `sink` is present, the request selects asynchronous mode (`202`
+        response); if it is absent, synchronous mode (`200` response).
+        `sinkCredential` is RECOMMENDED when `sink` is present and is not
+        valid without `sink`: a request with `sinkCredential` but no `sink`
+        is rejected with `400 INVALID_ARGUMENT`.
       type: object
       required:
         - apis
@@ -513,24 +815,43 @@ components:
             description: |
               URL of a released version of a CAMARA API specification on
               GitHub, e.g.
-              `https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml`.
-            example: "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
+              `https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml`.
+              The URL identifies the specification. Consumers and providers
+              match it as a string and cannot assume it can be fetched
+              directly.
+            example: "https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml"
         device:
-          $ref: "#/components/schemas/Device"
+          description: |
+            Optional device context. If supplied, the overlay also contains the
+            runtime restrictions that apply to this device. If omitted, only the
+            static, producer-wide restrictions are returned. The device is not
+            derived from the access token.
+          allOf:
+            - $ref: "../common/CAMARA_common.yaml#/components/schemas/Device"
         sink:
-          type: string
-          format: uri
-          maxLength: 2048
-          pattern: '^https://.+$'
           description: |
             HTTPS URL at which the API Consumer is willing to receive
-            `overlay-updated` CloudEvents. Presence of this property (together
-            with `sinkCredential`) selects the asynchronous delivery mode and
-            implicitly subscribes the consumer to overlay updates for the
-            requested APIs.
-          example: "https://consumer.example.com/effective-overlay/notifications"
+            `overlay-updated` CloudEvents. Presence of this property selects
+            the asynchronous delivery mode and implicitly subscribes the
+            consumer to overlay updates for the requested APIs. If the API
+            provider does not support notification delivery, the request is
+            rejected with `422 EVENT_NOTIFICATIONS_NOT_SUPPORTED`.
+          allOf:
+            - $ref: "../common/CAMARA_event_common.yaml#/components/schemas/Sink"
         sinkCredential:
-          $ref: "../common/CAMARA_event_common.yaml#/components/schemas/SinkCredential"
+          description: |
+            Credential used by the API provider to authenticate when delivering
+            events to `sink`. It is RECOMMENDED to provide one.
+
+            For `accessTokenExpiresUtc`: an absolute (UTC) timestamp at which
+            the token shall be considered expired. Token expiration SHOULD
+            occur after the expiration of the requested registration,
+            allowing the client to be notified of any changes during the
+            registration's existence. If the token expires while the
+            registration is still active, the client will stop receiving
+            notifications.
+          allOf:
+            - $ref: "../common/CAMARA_event_common.yaml#/components/schemas/SinkCredential"
 
     # ─────────────────────────────────────────────────────────────────────────
     # Accepted response (async mode)
@@ -549,18 +870,16 @@ components:
         - sink
       properties:
         sink:
-          type: string
-          format: uri
-          maxLength: 2048
           description: |
             The HTTPS sink URL the producer has registered for this request.
             Echoed verbatim from the request body for consumer confirmation.
-          example: "https://consumer.example.com/effective-overlay/notifications"
+          allOf:
+            - $ref: "../common/CAMARA_event_common.yaml#/components/schemas/Sink"
 
     # ─────────────────────────────────────────────────────────────────────────
     # SchemaRestrictions vocabulary — defined in shared module
     #
-    # All SchemaRestriction* schemas live in the version-pinned module:
+    # All SchemaRestriction* schemas live in the shared module (vocabulary 2.1.0):
     #   ../modules/schema-restrictions.yaml
     #
     # This API references only the root entry point (SchemaRestrictions) via
@@ -572,10 +891,14 @@ components:
     # documented there. The bundled release artifact inlines all $refs, so
     # consumers always receive a self-contained document.
     #
-    # SchemaRestriction uses oneOf (not anyOf)
-    # and each subtype adds minProperties: 1, preventing empty-object matches.
-    # To adopt a newer vocabulary version, update the $ref below and bump
-    # this API's version field.
+    # SchemaRestriction uses oneOf (not anyOf) with a required `kind`
+    # discriminator: each restriction object carries `kind` set to its
+    # subtype's schema name.
+    # The module file name is unversioned; its vocabulary version is the
+    # module's info.version. A vocabulary change is made in place with an
+    # info.version bump (see the module's Versioning section). This API adopts
+    # a vocabulary version when it is bundled for release; update the version
+    # noted above and bump this API's version field when that happens.
     # ─────────────────────────────────────────────────────────────────────────
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -604,22 +927,44 @@ components:
           vocabulary and therefore cannot appear in a valid `update`.
         - `remove` is constrained to `enum: [true]` — only structural removal is
           expressible; `remove: false` (a no-op) is rejected.
-        - `oneOf: [required: [remove], required: [update]]` — exactly one
-          mutating field MUST be present per action; an action with both or
-          neither fails validation.
+        - `allOf` with two `not` clauses — exactly one mutating field MUST be
+          present per action: the first clause rejects an action carrying both
+          `remove` and `update`, the second rejects an action carrying neither.
+          The optional `description` does not count towards this rule.
+        - `description` is informational, as in Overlay 1.1.0; it MUST NOT
+          affect how the action is applied.
       type: object
       additionalProperties: false
       required: [target]
+      allOf:
+        - not:
+            required: [remove, update]
+        - not:
+            allOf:
+              - not:
+                  required: [remove]
+              - not:
+                  required: [update]
       properties:
         target:
           type: string
           minLength: 1
           maxLength: 2048
           description: |
-            A JSONPath expression selecting one or more nodes in the target
-            OpenAPI document to which this action applies. MUST conform to the
-            JSONPath syntax defined by Overlay 1.1.0.
-          example: "$.components.schemas['Device'].properties['ipv4Address']"
+            A JSONPath expression (RFC 9535) selecting one or more nodes in the
+            target OpenAPI document to which this action applies. Evaluated
+            against the document as published at `extends`, without resolving
+            `$ref`, and with the removals of earlier actions applied. MUST select
+            at least one node. See "Target expressions" in the API description
+            for the recommended form.
+          example: "$.components.schemas.CreateSession.allOf[?@.properties.duration].properties.duration"
+        description:
+          type: string
+          maxLength: 1024
+          description: |
+            Human-readable intent of this action. Informational only; it MUST
+            NOT affect how the action is applied.
+          example: Cap the requested session duration at one hour
         remove:
           type: boolean
           enum: [true]
@@ -637,9 +982,6 @@ components:
           minProperties: 1
           additionalProperties:
             $ref: "../modules/schema-restrictions.yaml#/components/schemas/SchemaRestrictions"
-      oneOf:
-        - required: [remove]
-        - required: [update]
 
     RestrictiveOverlay:
       description: |
@@ -700,13 +1042,14 @@ components:
           description: |
             URL of the CAMARA API specification this overlay targets. Matches
             one of the entries in the original request's `apis[]`.
-          example: "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
+          example: "https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml"
         actions:
           type: array
           description: |
             Ordered list of narrowing-only actions to apply to the target
-            document. Applied in order; later actions may reference nodes
-            modified by earlier actions. All items MUST conform to
+            document. Applied in order. Only `remove` changes the document
+            against which later targets are evaluated; `update` attaches
+            restrictions and does not. All items MUST conform to
             `RestrictiveAction`.
           minItems: 0
           maxItems: 100
@@ -744,7 +1087,7 @@ components:
             URL of the CAMARA API specification whose effective overlay has
             changed. Matches one of the entries in the original request's
             `apis[]`.
-          example: "https://github.com/camaraproject/QualityOnDemand/blob/r2.2/code/API_definitions/quality-on-demand.yaml"
+          example: "https://github.com/camaraproject/QualityOnDemand/blob/r3.2/code/API_definitions/quality-on-demand.yaml"
         overlay:
           $ref: "#/components/schemas/RestrictiveOverlay"
 
@@ -760,7 +1103,6 @@ components:
           required:
             - type
             - data
-            - datacontenttype
           properties:
             type:
               $ref: "#/components/schemas/OverlayUpdatedEventType"

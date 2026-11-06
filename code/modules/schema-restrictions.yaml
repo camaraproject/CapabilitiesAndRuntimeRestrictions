@@ -2,6 +2,14 @@
 # vocabulary used by CAMARA APIs that enforce restriction-only overlay
 # semantics (see effective-capabilities-and-restrictions).
 #
+# Any change to this file MUST bump info.version: MINOR for an addition or a
+# relaxation that keeps every previously valid restriction valid (for example
+# a new restriction subtype), MAJOR for a change that invalidates previously
+# valid restrictions or redefines a subtype's semantics. Consuming APIs inline
+# this module when they are bundled for release, so a published API keeps the
+# vocabulary version it was released with; a consuming API adopts a newer
+# version in its next release and bumps its own version.
+#
 # SCOPE: this file is Overlay-version-agnostic. The vocabulary describes what
 # may appear in the `update` field of a restrictive action regardless of
 # whether the surrounding overlay document conforms to Overlay 1.0.0, 1.1.0,
@@ -10,11 +18,10 @@
 # consuming API's local RestrictiveAction and RestrictiveOverlay schemas.
 #
 # This file MUST NOT be modified to encode API-specific semantics. It is a
-# shared vocabulary module. To adopt a newer vocabulary version, create a
-# sibling file rather than editing this one.
+# shared vocabulary module.
 openapi: 3.0.3
 info:
-  title: CAMARA Schema Restrictions Vocabulary 2.0.0
+  title: CAMARA Schema Restrictions Vocabulary 2.1.0
   description: |
     Defines the closed, narrowing-only vocabulary for the `update` field of
     a CAMARA restrictive overlay action. Every validation restriction in this
@@ -36,7 +43,7 @@ info:
     | Schema | `kind` value | Applies to | Keywords |
     |---|---|---|---|
     | `SchemaRestrictionAnnotation` | `SchemaRestrictionAnnotation` | any node | deprecated, readOnly, writeOnly, default |
-    | `SchemaRestrictionAnyInstance` | `SchemaRestrictionAnyInstance` | any node | type, enum (strict subset), const |
+    | `SchemaRestrictionAnyInstance` | `SchemaRestrictionAnyInstance` | any node | type, enum (values admitted by the target; strict subset of an existing enum), const |
     | `SchemaRestrictionNumeric` | `SchemaRestrictionNumeric` | number/integer | maximum, minimum, exclusiveMaximum, exclusiveMinimum, multipleOf |
     | `SchemaRestrictionString` | `SchemaRestrictionString` | string | maxLength, minLength, pattern |
     | `SchemaRestrictionArray` | `SchemaRestrictionArray` | array | maxItems, minItems, uniqueItems (true only), maxContains, minContains |
@@ -47,14 +54,22 @@ info:
 
     ## Versioning
 
-    This file is frozen at version 2.0.0. A new restriction type is a
-    minor addition; a redefinition of an existing subtype's semantics is a
-    major change. Either requires a new sibling file
-    (`schema-restrictions-2.1.0.yaml` or `schema-restrictions-3.0.0.yaml`).
-    Consuming APIs pin their `$ref` to the versioned filename and therefore
-    never silently inherit vocabulary changes.
+    The vocabulary version is `info.version`; the file name
+    (`schema-restrictions.yaml`) is unversioned. Every change MUST bump
+    `info.version`:
 
-  version: 2.0.0
+    - MINOR for an addition or relaxation that keeps every previously valid
+      restriction valid, such as a new restriction subtype;
+    - MAJOR for a change that invalidates previously valid restrictions or
+      redefines a subtype's semantics.
+
+    Consuming APIs reference this file by name and inline it when they are
+    bundled for release, so a published API keeps the vocabulary version it
+    was released with and never silently inherits a later change. A
+    consuming API adopts a newer vocabulary version in its next release and
+    bumps its own version.
+
+  version: 2.1.0
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -204,8 +219,11 @@ components:
         Type, enum, and const restrictions applicable to any target instance
         at runtime. Based on the JSON Schema
         [Validation keywords for Any instances](https://www.ietf.org/archive/id/draft-bhutton-json-schema-validation-01.html#name-validation-keywords-for-any).
-        `enum` MUST be a strict subset of the original enum values; adding
-        values not present in the original is not permitted.
+        Each `enum` value MUST be valid against the original target schema. If
+        the original target schema defines `enum`, the restricted `enum` MUST
+        be a strict subset of it. A restriction that would leave no allowed
+        value cannot be expressed with `enum` (`minItems: 1`); express it with
+        an operation-level restriction instead.
       type: object
       minProperties: 2
       additionalProperties: false
@@ -227,11 +245,11 @@ components:
           maxItems: 100
           uniqueItems: true
           description: |
-            Restrict allowed values to this subset of the original enum.
-            MUST be a strict subset; adding values not in the original enum
-            is not permitted.
+            Restrict allowed values to this list. Each value MUST be valid
+            against the original target schema; if that schema defines
+            `enum`, this list MUST be a strict subset of it.
           items:
-            description: A value that remains allowed for the target node; it MUST be one of the values in the original enum.
+            description: A value that remains allowed for the target node; it MUST be valid against the original target schema.
             anyOf:
               - type: string
                 maxLength: 256

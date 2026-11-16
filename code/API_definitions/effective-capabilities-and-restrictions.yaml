@@ -8,6 +8,78 @@ info:
     producer-wide constraints or as runtime constraints derived from a specific
     end-user device context.
 
+    ## In brief
+
+    The API returns a machine-readable **restriction set** that narrows a CAMARA
+    API contract for a given context. It does not require runtime modification
+    or recompilation of an OpenAPI schema. The returned document defines a
+    context-specific, **virtual effective contract**. A consumer may materialize
+    that contract by applying the restrictions to the OpenAPI description, or
+    project the restrictions directly onto JSON request instances and enforce
+    them at runtime. The latter is instance-level restriction enforcement, not
+    schema modification in the OpenAPI Overlay sense. The terms *restriction*
+    and *effective capability set* are defined under "Definitions" below.
+
+    **What the API offers**
+
+    - Per requested CAMARA API, the list of ways in which this producer's
+      contract is narrower than the CAMARA specification, either producer-wide
+      or for a given device.
+    - Restrictions that can only narrow. Nothing in the response can add an
+      operation, widen an enum or relax a bound.
+    - Optionally, a new restriction set whenever the effective contract changes.
+
+    **What the API does not offer or require**
+
+    - It does not require consumers to modify, regenerate or recompile an
+      OpenAPI description.
+    - It does not return an executable OpenAPI Overlay. A generic Overlay
+      processor must not be used to apply the restrictions (see "Interpreting a
+      restrictive overlay").
+    - It does not list what is supported. An element that no restriction
+      targets is supported with its unmodified CAMARA semantics.
+    - It does not reserve resources, guarantee that a request will succeed, or
+      predict network state. It narrows the contract only.
+    - It is not a catalogue of any values that a
+      CAMARA API defines as open. Use the respective CAMARA API that owns that data (e.g. QoS Profiles).
+
+    ## Consuming restrictions
+
+    A consumer combines the base CAMARA API description with the restrictions
+    to determine the effective contract, in one of two ways. Both are valid
+    and both use the same restrictions.
+
+    **Materialization**: build a derived OpenAPI description.
+
+    ```text
+    base spec + restrictions → effective OpenAPI description → compile / generate / validate / document
+    ```
+
+    **Runtime constraint projection**: enforce the restrictions directly,
+    without producing a derived description.
+
+    ```text
+    base spec identity + restrictions + request context → constraint evaluator → validate or adapt the request
+    ```
+
+    In projection mode the consumer resolves each target to its operation or
+    field, treats removed nodes as unavailable, checks the request against the
+    remaining restrictions, and rejects, adjusts or withholds what does not
+    fit. It may cache the result per API and context, and replaces it when a
+    notification arrives.
+
+    **Same result in both modes.** Whichever mode is used, the outcome MUST be
+    the same as if the request were checked against the effective
+    contract: the same requests are accepted, the same requests are
+    rejected, and the same operations, values and fields are offered or
+    withheld.
+
+    **Relationship to OpenAPI Overlay.** The response reuses the Overlay 1.1.0
+    document structure and JSONPath targeting to address nodes and carry
+    restrictions. It is a restricted profile whose purpose is enforcing the
+    effective contract; it does not require a physical or persisted schema
+    transformation.
+
     ## Definitions
 
     **Capability**: the set of features, operations, parameters, and value
@@ -44,10 +116,17 @@ info:
     set is the complement: everything the CAMARA spec defines that the overlay
     does not restrict.
 
+    The **effective contract** is the CAMARA API specification narrowed by the
+    returned restrictions. It is the contract against which a consumer
+    validates requests; "Consuming restrictions" above describes the two ways
+    to realize it.
+
     The producer returns, per requested CAMARA API, a `RestrictiveOverlay`
-    document that the consumer applies locally to the corresponding CAMARA
-    API specification to obtain a strictly-valid, narrowed view representing
-    the producer's effective capability set for that context.
+    document. The consumer combines it with the corresponding CAMARA API
+    specification to determine the effective contract, which represents the
+    producer's effective capability set for that context. The CAMARA
+    specification remains authoritative; the restrictions define a narrower,
+    context-specific valid subset of it.
 
     > **Note on Overlay versioning**: this API targets Overlay Specification
     > **version 1.1.0**. Returned overlay documents carry `overlay: "1.1.0"`
@@ -63,7 +142,8 @@ info:
     Producers MUST emit only restrictive `actions[]` in every overlay returned
     by this API. An action is restrictive when it either:
 
-    - sets `remove: true` to delete an existing node from the target document, or
+    - sets `remove: true` to treat an existing node as absent from the effective
+      contract (deleted, if the contract is materialized), or
     - sets `update` to a map of named restriction sets. Each set is a
       `SchemaRestrictions` object whose `restrictions[]` narrow the target node
       with `kind`-tagged restrictions — for example, an `enum` listing only
@@ -106,11 +186,13 @@ info:
     introduce new `oneOf` branches, raise a `maximum`, lower a `required`
     array, or otherwise relax the contract of the underlying CAMARA API.
 
-    # Applying a restrictive overlay
+    # Interpreting a restrictive overlay
 
     A `RestrictiveOverlay` is not a stock Overlay document: each `update` value
     is a `SchemaRestrictions` object, not a JSON fragment to merge. Do not use
-    a generic Overlay processor. An API Consumer applies an overlay as follows.
+    a generic Overlay processor. An API Consumer interprets an overlay as
+    follows. The steps define the effective contract and hold for both
+    materialization and runtime constraint projection.
 
     **Inputs.** The overlay, and the upstream CAMARA API specification that its
     `extends` URL identifies (the same URL as the entry in `apis[]`, or
@@ -333,14 +415,15 @@ info:
             |                  update{maximum}, ... ] }]   |
             |<--------------------|                        |
             |                     |                        |
-            | (d) apply overlay locally to cached spec     |
+            | (d) combine overlay with cached spec         |
             |     => effective contract for THIS device    |
+            |     (materialize it, or enforce directly)    |
             |                     |                        |
             | (e) drive UI; pre-validate request bodies    |
             |     against the effective contract           |
             |                     |                        |
             | (f) POST upstream call (e.g. /sessions),     |
-            |     pre-validated vs. the narrowed schema    |
+            |     pre-validated vs. the effective contract |
             |--------------------------------------------->|
             |<---------------------------------------------|
             |     200/201 -- no surprise 422s              |
@@ -969,13 +1052,13 @@ components:
           type: boolean
           enum: [true]
           description: |
-            When present (and MUST be `true`), the selected node is removed
-            from the target document. Removing a node is always a narrowing
-            operation. `remove: false` is not permitted.
+            When present (and MUST be `true`), the selected node is treated as
+            absent from the effective contract (removed, if the contract is
+            materialized). Removing a node is always a narrowing operation. `remove: false` is not permitted.
         update:
           type: object
           description: |
-            A map of named restriction sets to apply to the selected node.
+            A map of named restriction sets that narrow the selected node.
             Every value MUST conform to `SchemaRestrictions`. Only narrowing
             keywords are expressible — widening operations have no
             representation in the `SchemaRestrictions` vocabulary.
@@ -1046,8 +1129,8 @@ components:
         actions:
           type: array
           description: |
-            Ordered list of narrowing-only actions to apply to the target
-            document. Applied in order. Only `remove` changes the document
+            Ordered list of narrowing-only actions that define the effective
+            contract of the target specification. Applied in order. Only `remove` changes the document
             against which later targets are evaluated; `update` attaches
             restrictions and does not. All items MUST conform to
             `RestrictiveAction`.
